@@ -1,126 +1,126 @@
-# 🎬 Huobao Drama - AI 短剧生成平台
+# 🎬 Huobao Drama - Plataforma de Geração de Microdramas com IA
 
 <div align="center">
 
-**基于 TypeScript 全栈的 AI 短剧自动化生产平台**
+**Plataforma automatizada de produção de microdramas com IA, desenvolvida em TypeScript full stack**
 
 [![Node Version](https://img.shields.io/badge/Node.js-20+-339933?style=flat&logo=node.js)](https://nodejs.org)
 [![Vue Version](https://img.shields.io/badge/Vue-3.x-4FC08D?style=flat&logo=vue.js)](https://vuejs.org)
 [![License](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 
-[功能特性](#功能特性) • [快速开始](#快速开始) • [部署指南](#部署指南)
+[Recursos](#recursos) • [Início rápido](#início-rápido) • [Guia de implantação](#guia-de-implantação)
 
 </div>
 
 ---
 
-## 📖 项目简介
+## 📖 Visão geral do projeto
 
-Huobao Drama 是一个基于 AI 的短剧自动化生产平台，实现从剧本生成、角色设计、分镜制作到视频合成的全流程自动化。
+Huobao Drama é uma plataforma de produção automatizada de microdramas baseada em IA, que automatiza todo o processo, desde a geração do roteiro, design de personagens e criação de storyboards até a composição final do vídeo.
 
-火宝短剧商业版地址：[火宝短剧商业版](https://drama.chatfire.site/shortvideo)
-火宝小说生成：[火宝小说生成](https://marketing.chatfire.site/huobao-novel/)
+Versão comercial do Huobao Drama: [Huobao Drama Commercial Edition](https://drama.chatfire.site/shortvideo)  
+Gerador de romances Huobao: [Huobao Novel Generator](https://marketing.chatfire.site/huobao-novel/)
 
-### 🎯 核心价值
+### 🎯 Valor central
 
-- **🤖 AI 驱动**：使用大语言模型解析剧本，提取角色、场景和分镜信息
-- **🎨 智能创作**：AI 绘图生成角色形象和场景背景
-- **📹 视频生成**：基于文生视频和图生视频模型自动生成分镜视频
-- **🔄 工作流**：完整的短剧制作工作流，从创意到成片一站式完成
+- **🤖 Orientado por IA**: utiliza modelos de linguagem de grande porte para analisar roteiros e extrair personagens, cenários e informações de storyboard
+- **🎨 Criação inteligente**: usa IA para gerar visuais de personagens e planos de fundo dos cenários
+- **📹 Geração de vídeo**: cria automaticamente vídeos de storyboard com base em modelos de texto para vídeo e imagem para vídeo
+- **🔄 Fluxo de trabalho**: fluxo completo de produção de microdramas, da ideia inicial ao vídeo final, em uma experiência unificada
 
-### 🛠️ 技术架构
+### 🛠️ Arquitetura técnica
 
-```
-frontend/   — Nuxt 3 + Vue 3 + TypeScript (纯 CSS，无 UI 框架)
+```text
+frontend/   — Nuxt 3 + Vue 3 + TypeScript (CSS puro, sem framework de UI)
 backend/    — Hono + Drizzle ORM + Mastra AI Agents + better-sqlite3
-configs/    — config.yaml 配置文件
-data/       — SQLite 数据库 + 生成资源文件
-skills/     — Agent 技能定义 (SKILL.md)
-```
+configs/    — arquivo de configuração config.yaml
+data/       — banco de dados SQLite + arquivos de recursos gerados
+skills/     — definições de habilidades do Agent (SKILL.md)
+````
 
-### 🎥 作品展示 / Demo Videos
+### 🎥 Demonstração / Vídeos de exemplo
 
-体验 AI 短剧生成效果：
+Experimente os resultados da geração de microdramas com IA:
 
 <div align="center">
 
-**示例作品 1**
+**Exemplo 1**
 
 <video src="https://ffile.chatfire.site/cf/public/20260114094337396.mp4" controls width="640"></video>
 
-**示例作品 2**
+**Exemplo 2**
 
 <video src="https://ffile.chatfire.site/cf/public/fcede75e8aeafe22031dbf78f86285b8.mp4" controls width="640"></video>
 
-[点击观看视频 1](https://ffile.chatfire.site/cf/public/20260114094337396.mp4) | [点击观看视频 2](https://ffile.chatfire.site/cf/public/fcede75e8aeafe22031dbf78f86285b8.mp4)
+[Assistir ao vídeo 1](https://ffile.chatfire.site/cf/public/20260114094337396.mp4) | [Assistir ao vídeo 2](https://ffile.chatfire.site/cf/public/fcede75e8aeafe22031dbf78f86285b8.mp4)
 
 </div>
 
 ---
 
-## ✨ 功能特性
+## ✨ Recursos
 
-### 🎭 角色管理
+### 🎭 Gerenciamento de personagens
 
-- ✅ AI 生成角色形象
-- ✅ 批量角色生成
-- ✅ 角色图片上传和管理
-- ✅ 角色音色分配与试听
+* ✅ Geração de personagens com IA
+* ✅ Geração em lote de personagens
+* ✅ Upload e gerenciamento de imagens de personagens
+* ✅ Atribuição e prévia de vozes para personagens
 
-### 🎬 分镜制作
+### 🎬 Produção de storyboard
 
-- ✅ AI 自动拆解分镜脚本
-- ✅ 场景描述和镜头设计
-- ✅ 分镜图片生成（文生图）
-- ✅ 宫格图生成、切分与分配
-- ✅ 帧类型选择（首帧/尾帧/分镜板）
+* ✅ Decomposição automática do roteiro em storyboards com IA
+* ✅ Descrição de cenas e design de enquadramentos
+* ✅ Geração de imagens de storyboard (texto para imagem)
+* ✅ Geração, recorte e distribuição de grades de imagens
+* ✅ Seleção do tipo de quadro (primeiro quadro / último quadro / storyboard)
 
-### 🎥 视频生成
+### 🎥 Geração de vídeo
 
-- ✅ 图生视频自动生成
-- ✅ TTS 配音生成
-- ✅ FFmpeg 单镜头合成（视频 + 音频 + 字幕）
-- ✅ 整集拼接导出
+* ✅ Geração automática de vídeo a partir de imagem
+* ✅ Geração de narração com TTS
+* ✅ Composição de tomadas individuais com FFmpeg (vídeo + áudio + legendas)
+* ✅ Exportação com concatenação do episódio completo
 
-### 📦 资源管理
+### 📦 Gerenciamento de recursos
 
-- ✅ 素材库统一管理
-- ✅ 本地存储支持
-- ✅ 任务进度追踪
+* ✅ Gerenciamento centralizado da biblioteca de assets
+* ✅ Suporte a armazenamento local
+* ✅ Acompanhamento do progresso das tarefas
 
 ### 🤖 AI Agents
 
-内置 5 个 Mastra Agent，支持数据库配置和 Skill 扩展：
+Inclui 5 agentes Mastra, com suporte a configuração em banco de dados e extensões via Skill:
 
-| Agent | 职责 |
-|---|---|
-| `script_rewriter` | 小说 → 格式化剧本改写 |
-| `extractor` | 角色 + 场景智能提取与去重 |
-| `storyboard_breaker` | 剧本 → 分镜序列拆解 |
-| `voice_assigner` | 角色音色自动分配 |
-| `grid_prompt_generator` | 角色/场景/宫格图提示词生成 |
+| Agent                   | Responsabilidade                                                   |
+| ----------------------- | ------------------------------------------------------------------ |
+| `script_rewriter`       | Romance → reescrita em roteiro formatado                           |
+| `extractor`             | Extração inteligente e deduplicação de personagens + cenários      |
+| `storyboard_breaker`    | Roteiro → decomposição em sequência de storyboards                 |
+| `voice_assigner`        | Atribuição automática de vozes aos personagens                     |
+| `grid_prompt_generator` | Geração de prompts para personagens / cenários / grades de imagens |
 
-### 🔌 多厂商适配
+### 🔌 Compatibilidade com múltiplos provedores
 
-| 类型 | 支持厂商 |
-|---|---|
-| **图片** | OpenAI、Gemini、MiniMax、火山引擎、阿里、Chatfire |
-| **视频** | MiniMax、火山引擎/Seedance、Vidu、阿里 |
-| **TTS** | MiniMax |
+| Tipo       | Provedores compatíveis                                     |
+| ---------- | ---------------------------------------------------------- |
+| **Imagem** | OpenAI, Gemini, MiniMax, Volcano Engine, Alibaba, Chatfire |
+| **Vídeo**  | MiniMax, Volcano Engine/Seedance, Vidu, Alibaba            |
+| **TTS**    | MiniMax                                                    |
 
 ---
 
-## 🚀 快速开始
+## 🚀 Início rápido
 
-### 📋 环境要求
+### 📋 Requisitos de ambiente
 
-| 软件 | 版本要求 | 说明 |
-|---|---|---|
-| **Node.js** | 20+ | 前后端运行环境 |
-| **npm** | 9+ | 包管理工具 |
-| **FFmpeg** | 4.0+ | 视频处理（**必需**） |
+| Software    | Versão exigida | Descrição                                  |
+| ----------- | -------------- | ------------------------------------------ |
+| **Node.js** | 20+            | Ambiente de execução do frontend e backend |
+| **npm**     | 9+             | Gerenciador de pacotes                     |
+| **FFmpeg**  | 4.0+           | Processamento de vídeo (**obrigatório**)   |
 
-#### 安装 FFmpeg
+#### Instalação do FFmpeg
 
 **macOS:**
 
@@ -135,23 +135,23 @@ sudo apt update && sudo apt install ffmpeg
 ```
 
 **Windows:**
-从 [FFmpeg 官网](https://ffmpeg.org/download.html) 下载并配置环境变量
+Baixe no [site oficial do FFmpeg](https://ffmpeg.org/download.html) e configure a variável de ambiente PATH.
 
-验证安装：
+Verifique a instalação:
 
 ```bash
 ffmpeg -version
 ```
 
-### ⚙️ 配置文件
+### ⚙️ Arquivo de configuração
 
-复制并编辑配置文件：
+Copie e edite o arquivo de configuração:
 
 ```bash
 cp configs/config.example.yaml configs/config.yaml
 ```
 
-配置文件格式（`configs/config.yaml`）：
+Formato do arquivo de configuração (`configs/config.yaml`):
 
 ```yaml
 app:
@@ -180,59 +180,59 @@ ai:
   default_video_provider: "doubao"
 ```
 
-> **说明**：AI 服务的具体 API Key 和模型参数在 Web 界面的「设置」页面中配置。
+> **Observação**: as API keys e os parâmetros de modelo dos serviços de IA são configurados na página **Configurações** da interface web.
 
-### 📥 安装依赖
+### 📥 Instalação de dependências
 
 ```bash
-# 克隆项目
+# Clonar o projeto
 git clone https://github.com/chatfire-AI/huobao-drama.git
 cd huobao-drama
 
-# 安装后端依赖
+# Instalar as dependências do backend
 cd backend && npm install
 
-# 安装前端依赖
+# Instalar as dependências do frontend
 cd ../frontend && npm install
 ```
 
-### 🎯 启动项目
+### 🎯 Inicialização do projeto
 
-#### 方式一：开发模式（推荐）
+#### Opção 1: modo de desenvolvimento (recomendado)
 
-前后端分离，支持热重载：
+Frontend e backend separados, com suporte a hot reload:
 
 ```bash
-# 终端1：启动后端
+# Terminal 1: iniciar o backend
 cd backend
 npm run dev
 
-# 终端2：启动前端
+# Terminal 2: iniciar o frontend
 cd frontend
 npm run dev
 ```
 
-- 前端地址: `http://localhost:3013`
-- 后端 API: `http://localhost:5679/api/v1`
-- 前端自动代理 `/api` 和 `/static` 到后端
+* Endereço do frontend: `http://localhost:3013`
+* API do backend: `http://localhost:5679/api/v1`
+* O frontend encaminha automaticamente `/api` e `/static` para o backend
 
-#### 方式二：单服务模式
+#### Opção 2: modo de serviço único
 
-后端同时提供 API 和前端静态文件：
+O backend fornece simultaneamente a API e os arquivos estáticos do frontend:
 
 ```bash
-# 1. 构建前端
+# 1. Gerar o build do frontend
 cd frontend && npm run generate
 
-# 2. 启动后端
+# 2. Iniciar o backend
 cd ../backend && npm start
 ```
 
-访问: `http://localhost:5679`
+Acesse: `http://localhost:5679`
 
-### 🗄️ 数据库
+### 🗄️ Banco de dados
 
-数据库表在首次启动时自动创建，无需手动迁移。默认路径 `data/huobao_drama.db`，可通过环境变量覆盖：
+As tabelas do banco são criadas automaticamente na primeira inicialização, sem necessidade de migração manual. O caminho padrão é `data/huobao_drama.db`, podendo ser sobrescrito por variável de ambiente:
 
 ```bash
 DB_PATH=/path/to/your.db npm start
@@ -240,35 +240,35 @@ DB_PATH=/path/to/your.db npm start
 
 ---
 
-## 📦 部署指南
+## 📦 Guia de implantação
 
-### ☁️ 云端一键部署（推荐 3080Ti）
+### ☁️ Implantação em nuvem com um clique (recomendado: 3080Ti)
 
-👉 [优云智算，一键部署](https://www.compshare.cn/images/CaWEHpAA8t1H?referral_code=8hUJOaWz3YzG64FI2OlCiB&ytag=GPU_YY_YX_GitHub_huobaoai)
+👉 [YouYun Zhisuan — implantação com um clique](https://www.compshare.cn/images/CaWEHpAA8t1H?referral_code=8hUJOaWz3YzG64FI2OlCiB&ytag=GPU_YY_YX_GitHub_huobaoai)
 
-> ⚠️ **注意**：云端部署方案数据请及时存储到本地
+> ⚠️ **Atenção**: no plano de implantação em nuvem, salve seus dados localmente com regularidade.
 
 ---
 
-### 🐳 Docker 部署（推荐）
+### 🐳 Implantação com Docker (recomendado)
 
-#### 方式一：Docker Compose（推荐）
+#### Opção 1: Docker Compose (recomendado)
 
 ```bash
-# 启动服务
+# Iniciar os serviços
 docker compose up -d
 
-# 查看日志
+# Ver logs
 docker compose logs -f
 
-# 停止服务
+# Parar os serviços
 docker compose down
 ```
 
-#### 方式二：Docker 命令
+#### Opção 2: comandos Docker
 
 ```bash
-# 从 Docker Hub 运行
+# Executar a partir do Docker Hub
 docker run -d \
   --name huobao-drama \
   -p 5679:5679 \
@@ -277,13 +277,13 @@ docker run -d \
   --restart unless-stopped \
   huobao/huobao-drama:latest
 
-# 查看日志
+# Ver logs
 docker logs -f huobao-drama
 ```
 
-> **注意**：Linux 用户需添加 `--add-host=host.docker.internal:host-gateway` 以访问宿主机服务
+> **Observação**: usuários Linux devem adicionar `--add-host=host.docker.internal:host-gateway` para acessar serviços do host
 
-**本地构建**（可选）：
+**Build local** (opcional):
 
 ```bash
 docker build -t huobao-drama:latest .
@@ -293,53 +293,54 @@ docker run -d --name huobao-drama -p 5679:5679 \
   huobao-drama:latest
 ```
 
-**Docker 部署优势：**
+**Vantagens da implantação com Docker:**
 
-- ✅ 开箱即用，内置 FFmpeg 和默认配置
-- ✅ 前后端合并为单镜像、单端口
-- ✅ 环境一致性，避免依赖问题
-- ✅ `data/` 目录 volume 挂载，数据持久化
+* ✅ Pronto para uso, com FFmpeg e configuração padrão já incluídos
+* ✅ Frontend e backend combinados em uma única imagem e uma única porta
+* ✅ Consistência de ambiente, evitando problemas de dependência
+* ✅ Montagem do diretório `data/` como volume para persistência de dados
 
-#### 🔗 访问宿主机服务（Ollama / 本地模型）
+#### 🔗 Acesso a serviços do host (Ollama / modelos locais)
 
-容器内可通过 `http://host.docker.internal:端口号` 访问宿主机服务。
+Dentro do contêiner, é possível acessar serviços do host por meio de `http://host.docker.internal:porta`.
 
-**配置步骤：**
+**Etapas de configuração:**
 
-1. 宿主机启动服务（监听所有接口）：
+1. Inicie o serviço no host (escutando em todas as interfaces):
 
    ```bash
    export OLLAMA_HOST=0.0.0.0:11434 && ollama serve
    ```
 
-2. 在 Web 界面「设置 → AI 服务配置」中填写：
-   - Base URL: `http://host.docker.internal:11434/v1`
-   - Provider: `openai`
-   - Model: `qwen2.5:latest`
+2. Na interface web, acesse **Configurações → Configuração de serviços de IA** e informe:
+
+   * Base URL: `http://host.docker.internal:11434/v1`
+   * Provider: `openai`
+   * Model: `qwen2.5:latest`
 
 ---
 
-### 🏭 传统部署方式
+### 🏭 Implantação tradicional
 
 ```bash
-# 1. 构建前端
+# 1. Gerar o build do frontend
 cd frontend && npm run generate && cd ..
 
-# 2. 启动后端
+# 2. Iniciar o backend
 cd backend && npm start
 ```
 
-需要上传到服务器的文件：
+Arquivos que precisam ser enviados ao servidor:
 
-```
-backend/          # 后端源码 + node_modules
-frontend/dist/    # 前端构建产物
+```text
+backend/          # código-fonte do backend + node_modules
+frontend/dist/    # artefatos de build do frontend
 configs/config.yaml
-data/             # 数据目录（首次运行自动创建）
-skills/           # Agent 技能文件
+data/             # diretório de dados (criado automaticamente na primeira execução)
+skills/           # arquivos de Skill dos Agents
 ```
 
-#### Nginx 反向代理
+#### Proxy reverso com Nginx
 
 ```nginx
 server {
@@ -357,104 +358,108 @@ server {
 
 ---
 
-## 🎨 技术栈
+## 🎨 Stack tecnológica
 
-### 后端
+### Backend
 
-- **运行时**: Node.js 20+
-- **Web 框架**: Hono
-- **ORM**: Drizzle ORM + better-sqlite3
-- **AI Agent**: Mastra + AI SDK (OpenAI compatible)
-- **视频处理**: FFmpeg (fluent-ffmpeg)
-- **图片处理**: Sharp
+* **Runtime**: Node.js 20+
+* **Framework web**: Hono
+* **ORM**: Drizzle ORM + better-sqlite3
+* **AI Agent**: Mastra + AI SDK (compatível com OpenAI)
+* **Processamento de vídeo**: FFmpeg (fluent-ffmpeg)
+* **Processamento de imagem**: Sharp
 
-### 前端
+### Frontend
 
-- **框架**: Nuxt 3 (SPA 模式)
-- **语言**: Vue 3 + TypeScript
-- **路由**: 文件路由 (Vue Router 4)
-- **样式**: 纯 CSS + CSS Variables (暗色主题)
-- **图标**: Lucide Vue
-
----
-
-## 📝 常见问题
-
-### Q: Docker 容器如何访问宿主机的 Ollama？
-
-A: 使用 `http://host.docker.internal:11434/v1` 作为 Base URL。注意：
-1. 宿主机 Ollama 需监听 `0.0.0.0`：`export OLLAMA_HOST=0.0.0.0:11434 && ollama serve`
-2. Linux 用户使用 `docker run` 需添加：`--add-host=host.docker.internal:host-gateway`
-
-### Q: FFmpeg 未安装或找不到？
-
-A: 确保 FFmpeg 已安装并在 PATH 环境变量中。运行 `ffmpeg -version` 验证。Docker 部署已内置 FFmpeg。
-
-### Q: 前端无法连接后端 API？
-
-A: 检查后端是否启动，端口是否正确。开发模式下前端代理配置在 `frontend/nuxt.config.ts`。
-
-### Q: 数据库表未创建？
-
-A: 后端会在首次启动时自动创建所有表，检查日志确认初始化是否成功。
+* **Framework**: Nuxt 3 (modo SPA)
+* **Linguagem**: Vue 3 + TypeScript
+* **Roteamento**: roteamento por arquivos (Vue Router 4)
+* **Estilo**: CSS puro + CSS Variables (tema escuro)
+* **Ícones**: Lucide Vue
 
 ---
 
-## 📋 更新日志
+## 📝 Perguntas frequentes
+
+### P: Como um contêiner Docker acessa o Ollama do host?
+
+R: Use `http://host.docker.internal:11434/v1` como Base URL. Observações:
+
+1. O Ollama no host deve escutar em `0.0.0.0`: `export OLLAMA_HOST=0.0.0.0:11434 && ollama serve`
+2. Usuários Linux que utilizarem `docker run` precisam adicionar: `--add-host=host.docker.internal:host-gateway`
+
+### P: O FFmpeg não está instalado ou não foi encontrado?
+
+R: Verifique se o FFmpeg está instalado e disponível na variável de ambiente PATH. Execute `ffmpeg -version` para confirmar. Na implantação com Docker, o FFmpeg já vem incluído.
+
+### P: O frontend não consegue se conectar à API do backend?
+
+R: Verifique se o backend está em execução e se a porta está correta. No modo de desenvolvimento, a configuração de proxy do frontend fica em `frontend/nuxt.config.ts`.
+
+### P: As tabelas do banco de dados não foram criadas?
+
+R: O backend cria todas as tabelas automaticamente na primeira inicialização. Verifique os logs para confirmar se a inicialização foi concluída com sucesso.
+
+---
+
+## 📋 Registro de atualizações
 
 ### v2.0.0 (2026-04)
 
-#### 🚀 重大更新
+#### 🚀 Principais atualizações
 
-- 项目全面迁移至 TypeScript 技术栈
-  - 后端：Hono + Drizzle ORM + better-sqlite3
-  - 前端：Nuxt 3 + Vue 3
-  - AI Agent：Mastra 框架
-- 重做单集工作台 UI 和生产流程
-  - 更紧凑的控制台布局
-  - 重做分镜编辑区
-  - 重做配音、镜头图、视频、合成、导出界面
-- 新增 Docker 部署支持，前后端合并为单镜像
-- 增加运行时 Skill 加载机制
-- 扩展多厂商媒体 Adapter
-  - 图片：OpenAI、Gemini、MiniMax、火山引擎、阿里
-  - 视频：MiniMax、火山引擎/Seedance、Vidu、阿里
-  - TTS：MiniMax
-- 增加宫格图生成、切分和重新分配流程
-- 优化本地文件处理与参考图按需转码
+* Migração completa do projeto para a stack TypeScript
+
+  * Backend: Hono + Drizzle ORM + better-sqlite3
+  * Frontend: Nuxt 3 + Vue 3
+  * AI Agent: framework Mastra
+* Redesenho da interface e do fluxo de produção da bancada de trabalho por episódio
+
+  * Layout de console mais compacto
+  * Redesenho da área de edição de storyboard
+  * Redesenho das interfaces de dublagem, imagens de tomadas, vídeo, composição e exportação
+* Adicionado suporte a implantação com Docker, unificando frontend e backend em uma única imagem
+* Adicionado mecanismo de carregamento de Skills em tempo de execução
+* Expansão dos adaptadores de mídia para múltiplos provedores
+
+  * Imagem: OpenAI, Gemini, MiniMax, Volcano Engine, Alibaba
+  * Vídeo: MiniMax, Volcano Engine/Seedance, Vidu, Alibaba
+  * TTS: MiniMax
+* Adicionado fluxo de geração, recorte e redistribuição de grades de imagens
+* Otimizado o processamento de arquivos locais e a transcodificação sob demanda de imagens de referência
 
 ### v1.0.4 (2026-01-27)
 
-- 引入本地存储策略，规避外部资源链接失效
-- Base64 参考图嵌入式传输
-- 修复镜头切换状态重置问题
-- 添加场景迁移至章节
+* Introduzida estratégia de armazenamento local para evitar falhas em links de recursos externos
+* Transmissão embutida de imagens de referência em Base64
+* Corrigido o problema de redefinição de estado na troca de tomadas
+* Adicionada migração de cenários para capítulos
 
 ### v1.0.3 (2026-01-16)
 
-- SQLite 纯 Go 驱动，支持 CGO_ENABLED=0 跨平台编译
-- 优化并发性能（WAL 模式）
-- Docker 跨平台支持 host.docker.internal
+* Driver SQLite puro em Go, com suporte a compilação multiplataforma com `CGO_ENABLED=0`
+* Otimização de desempenho em concorrência (modo WAL)
+* Suporte multiplataforma no Docker para `host.docker.internal`
 
 ### v1.0.2 (2026-01-14)
 
-- 修复视频生成 API 响应解析问题
-- 添加 OpenAI Sora 视频端点配置
-- 优化错误处理和日志输出
+* Corrigido o problema de parsing da resposta da API de geração de vídeo
+* Adicionada configuração do endpoint de vídeo OpenAI Sora
+* Melhorado o tratamento de erros e a saída de logs
 
 ---
 
-## 🤝 贡献指南
+## 🤝 Guia de contribuição
 
-欢迎提交 Issue 和 Pull Request！
+Issues e Pull Requests são bem-vindos.
 
-1. Fork 本项目
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交改动 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
+1. Faça um fork deste projeto
+2. Crie uma branch de funcionalidade (`git checkout -b feature/AmazingFeature`)
+3. Faça commit das alterações (`git commit -m 'Add some AmazingFeature'`)
+4. Envie para a branch (`git push origin feature/AmazingFeature`)
+5. Abra um Pull Request
 
-常用检查命令：
+Comandos úteis para validação:
 
 ```bash
 cd backend && npm run typecheck
@@ -463,39 +468,39 @@ cd ../frontend && npm run build
 
 ---
 
-## API 配置站点
+## Site de configuração da API
 
-2 分钟完成配置：[API 聚合站点](https://api.chatfire.site/models)
+Configuração em 2 minutos: [API Aggregation Site](https://api.chatfire.site/models)
 
 ---
 
-## 👨‍💻 关于我们
+## 👨‍💻 Sobre nós
 
-**AI 火宝 - AI 工作室创业中**
+**AI Huobao — estúdio de IA em fase de empreendedorismo**
 
-- 🏠 **位置**: 中国南京
-- 🚀 **状态**: 创业中
-- 📧 **Email**: [18550175439@163.com](mailto:18550175439@163.com)
-- 🐙 **GitHub**: [https://github.com/chatfire-AI/huobao-drama](https://github.com/chatfire-AI/huobao-drama)
+* 🏠 **Localização**: Nanjing, China
+* 🚀 **Status**: em fase de startup
+* 📧 **Email**: [18550175439@163.com](mailto:18550175439@163.com)
+* 🐙 **GitHub**: [https://github.com/chatfire-AI/huobao-drama](https://github.com/chatfire-AI/huobao-drama)
 
-> _"让 AI 帮我们做更有创造力的事"_
+> *"Deixe a IA nos ajudar a fazer coisas mais criativas"*
 
-## 项目交流群
+## Grupo da comunidade do projeto
 
-![项目交流群](drama.png)
+![Grupo da comunidade do projeto](drama.png)
 
-- 提交 [Issue](../../issues)
-- 发送邮件至项目维护者
+* Envie uma [Issue](../../issues)
+* Ou mande um e-mail ao mantenedor do projeto
 
 ---
 
 <div align="center">
 
-**⭐ 如果这个项目对你有帮助，请给一个 Star！**
+**⭐ Se este projeto foi útil para você, deixe uma Star.**
 
-## Star History
+## Histórico de Stars
 
-[![Star History Chart](https://api.star-history.com/svg?repos=chatfire-AI/huobao-drama&type=date&legend=top-left)](https://www.star-history.com/#chatfire-AI/huobao-drama&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=chatfire-AI/huobao-drama\&type=date\&legend=top-left)](https://www.star-history.com/#chatfire-AI/huobao-drama&type=date&legend=top-left)
 Made with ❤️ by Huobao Team
 
 </div>

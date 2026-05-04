@@ -18,29 +18,23 @@ function statusColor(status: number): string {
 }
 
 function formatTime(): string {
-  return new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  return new Date().toLocaleTimeString('pt-BR', { hour12: false })
 }
 
-/**
- * 全局日志中间件 — 打印请求方法/路径/状态/耗时/请求体
- */
+
 export const requestLogger: MiddlewareHandler = async (c, next) => {
   const method = c.req.method
   const path = c.req.path
   const start = performance.now()
 
-  // 打印请求
+
   const time = formatTime()
   let bodyInfo = ''
   if (['POST', 'PUT', 'PATCH'].includes(method)) {
-    try {
-      const clone = c.req.raw.clone()
-      const text = await clone.text()
-      if (text) {
-        const truncated = text.length > 500 ? text.slice(0, 500) + '...' : text
-        bodyInfo = `\n  ${colors.dim}body: ${truncated}${colors.reset}`
-      }
-    } catch {}
+    const contentType = c.req.header('content-type') || 'unknown'
+    const length = c.req.header('content-length')
+    const lengthLabel = length ? ` ${length}b` : ''
+    bodyInfo = `\n  ${colors.dim}payload: [${contentType}${lengthLabel}]${colors.reset}`
   }
 
   console.log(`${colors.dim}${time}${colors.reset} ${colors.cyan}${method}${colors.reset} ${path}${bodyInfo}`)
@@ -53,9 +47,7 @@ export const requestLogger: MiddlewareHandler = async (c, next) => {
   console.log(`${colors.dim}${time}${colors.reset} ${colors.cyan}${method}${colors.reset} ${path} ${sc}${status}${colors.reset} ${colors.dim}${ms}ms${colors.reset}`)
 }
 
-/**
- * 全局错误处理 — 捕获未处理异常，打印完整堆栈
- */
+
 export const errorHandler: MiddlewareHandler = async (c, next) => {
   try {
     await next()

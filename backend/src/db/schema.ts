@@ -1,7 +1,4 @@
-/**
- * Drizzle schema — 精确匹配现有 SQLite 数据库列名
- * 从 PRAGMA table_info() 逆向生成
- */
+
 import { sqliteTable, text, integer, real, primaryKey } from 'drizzle-orm/sqlite-core'
 
 export const dramas = sqliteTable('dramas', {
@@ -36,6 +33,8 @@ export const episodes = sqliteTable('episodes', {
   imageConfigId: integer('image_config_id'),
   videoConfigId: integer('video_config_id'),
   audioConfigId: integer('audio_config_id'),
+  defaultMotionPreset: text('default_motion_preset').default('drift'),
+  defaultSubtitleMode: text('default_subtitle_mode').default('dynamic'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
   deletedAt: text('deleted_at'),
@@ -49,6 +48,7 @@ export const characters = sqliteTable('characters', {
   description: text('description'),
   appearance: text('appearance'),
   personality: text('personality'),
+  visualProfile: text('visual_profile'),
   voiceStyle: text('voice_style'),
   imageUrl: text('image_url'),
   referenceImages: text('reference_images'),
@@ -78,6 +78,32 @@ export const episodeScenes = sqliteTable('episode_scenes', {
   createdAt: text('created_at').notNull(),
 })
 
+export const episodeProps = sqliteTable('episode_props', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  episodeId: integer('episode_id').notNull(),
+  propId: integer('prop_id').notNull(),
+  createdAt: text('created_at').notNull(),
+})
+
+export const extractionMentions = sqliteTable('extraction_mentions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  episodeId: integer('episode_id').notNull(),
+  dramaId: integer('drama_id').notNull(),
+  entityType: text('entity_type').notNull(),
+  entityIdentity: text('entity_identity').notNull(),
+  entityLabel: text('entity_label'),
+  signal: text('signal').notNull(),
+  confidence: real('confidence').notNull().default(0),
+  sourceQuote: text('source_quote'),
+  sourceSpan: text('source_span'),
+  sceneIndex: integer('scene_index'),
+  location: text('location'),
+  time: text('time'),
+  metadata: text('metadata'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
 export const scenes = sqliteTable('scenes', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   dramaId: integer('drama_id').notNull(),
@@ -85,6 +111,7 @@ export const scenes = sqliteTable('scenes', {
   location: text('location').notNull(),
   time: text('time').notNull(),
   prompt: text('prompt').notNull(),
+  visualProfile: text('visual_profile'),
   storyboardCount: integer('storyboard_count').default(1),
   imageUrl: text('image_url'),
   status: text('status').default('pending'),
@@ -115,6 +142,14 @@ export const storyboards = sqliteTable('storyboards', {
   dialogue: text('dialogue'),
   description: text('description'),
   duration: integer('duration').default(0),
+  generationSpec: text('generation_spec'),
+  reviewStatus: text('review_status'),
+  reviewNotes: text('review_notes'),
+  continuityMode: text('continuity_mode').default('auto'),
+  continuitySourceStoryboardId: integer('continuity_source_storyboard_id'),
+  motionPresetOverride: text('motion_preset_override'),
+  lastComposedMotionPreset: text('last_composed_motion_preset'),
+  lastComposedSubtitleMode: text('last_composed_subtitle_mode'),
   composedImage: text('composed_image'),
   firstFrameImage: text('first_frame_image'),
   lastFrameImage: text('last_frame_image'),
@@ -152,7 +187,19 @@ export const aiServiceConfigs = sqliteTable('ai_service_configs', {
   settings: text('settings'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
-  // 注意: 此表无 deleted_at
+
+})
+
+export const providerConnections = sqliteTable('provider_connections', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  provider: text('provider').notNull().unique(),
+  activeSource: text('active_source'),
+  oauthPayload: text('oauth_payload'),
+  ignoredAuthSignature: text('ignored_auth_signature'),
+  accountLabel: text('account_label'),
+  metadata: text('metadata'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
 })
 
 export const aiServiceProviders = sqliteTable('ai_service_providers', {
@@ -172,9 +219,9 @@ export const aiServiceProviders = sqliteTable('ai_service_providers', {
 export const aiVoices = sqliteTable('ai_voices', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   voiceId: text('voice_id').notNull().unique(),   // MiniMax voice_id
-  voiceName: text('voice_name').notNull(),         // 中文名
-  description: text('description'),                // 描述数组 JSON
-  language: text('language'),                     // 语言标签
+  voiceName: text('voice_name').notNull(),
+  description: text('description'),
+  language: text('language'),
   provider: text('provider').notNull(),           // minimax
   createdAt: text('created_at').notNull(),
 })
@@ -223,6 +270,7 @@ export const imageGenerations = sqliteTable('image_generations', {
   width: integer('width'),
   height: integer('height'),
   referenceImages: text('reference_images'),
+  workflowJobId: integer('workflow_job_id'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
   completedAt: text('completed_at'),
@@ -257,6 +305,7 @@ export const videoGenerations = sqliteTable('video_generations', {
   errorMsg: text('error_msg'),
   width: integer('width'),
   height: integer('height'),
+  workflowJobId: integer('workflow_job_id'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
   completedAt: text('completed_at'),
@@ -276,9 +325,149 @@ export const videoMerges = sqliteTable('video_merges', {
   duration: integer('duration'),
   taskId: text('task_id'),
   errorMsg: text('error_msg'),
+  workflowJobId: integer('workflow_job_id'),
   createdAt: text('created_at').notNull(),
   completedAt: text('completed_at'),
   deletedAt: text('deleted_at'),
+})
+
+export const workflowJobs = sqliteTable('workflow_jobs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  kind: text('kind').notNull(),
+  status: text('status').notNull().default('queued'),
+  relatedEntityType: text('related_entity_type'),
+  relatedEntityId: integer('related_entity_id'),
+  dramaId: integer('drama_id'),
+  episodeId: integer('episode_id'),
+  provider: text('provider'),
+  model: text('model'),
+  inputSummary: text('input_summary'),
+  outputSummary: text('output_summary'),
+  errorMsg: text('error_msg'),
+  metadata: text('metadata'),
+  retryOfJobId: integer('retry_of_job_id'),
+  startedAt: text('started_at'),
+  completedAt: text('completed_at'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const providerUsageEvents = sqliteTable('provider_usage_events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  workflowJobId: integer('workflow_job_id'),
+  serviceType: text('service_type').notNull(),
+  provider: text('provider').notNull(),
+  model: text('model'),
+  operation: text('operation').notNull(),
+  status: text('status').notNull().default('started'),
+  requestHash: text('request_hash'),
+  errorMsg: text('error_msg'),
+  latencyMs: integer('latency_ms'),
+  metadata: text('metadata'),
+  createdAt: text('created_at').notNull(),
+})
+
+export const promptTemplates = sqliteTable('prompt_templates', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  key: text('key').notNull().unique(),
+  name: text('name').notNull(),
+  category: text('category').notNull(),
+  description: text('description'),
+  content: text('content').notNull(),
+  variables: text('variables'),
+  version: integer('version').notNull().default(1),
+  isDefault: integer('is_default', { mode: 'boolean' }).default(true),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  deletedAt: text('deleted_at'),
+})
+
+export const promptHistory = sqliteTable('prompt_history', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  promptTemplateId: integer('prompt_template_id'),
+  templateKey: text('template_key').notNull(),
+  version: integer('version').notNull(),
+  action: text('action').notNull(),
+  content: text('content').notNull(),
+  variables: text('variables'),
+  metadata: text('metadata'),
+  createdAt: text('created_at').notNull(),
+})
+
+export const ideas = sqliteTable('ideas', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  title: text('title').notNull(),
+  description: text('description'),
+  genre: text('genre'),
+  tone: text('tone'),
+  language: text('language').default('pt-BR'),
+  status: text('status').notNull().default('draft'),
+  seedPrompt: text('seed_prompt'),
+  metadata: text('metadata'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  deletedAt: text('deleted_at'),
+})
+
+export const discoveryRuns = sqliteTable('discovery_runs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  ideaId: integer('idea_id'),
+  mode: text('mode').notNull().default('no-web'),
+  status: text('status').notNull().default('queued'),
+  query: text('query'),
+  summary: text('summary'),
+  provider: text('provider'),
+  model: text('model'),
+  errorMsg: text('error_msg'),
+  metadata: text('metadata'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  completedAt: text('completed_at'),
+})
+
+export const discoveryCandidates = sqliteTable('discovery_candidates', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  runId: integer('run_id').notNull(),
+  title: text('title').notNull(),
+  summary: text('summary'),
+  hook: text('hook'),
+  premise: text('premise'),
+  tags: text('tags'),
+  score: real('score'),
+  metadata: text('metadata'),
+  createdAt: text('created_at').notNull(),
+})
+
+export const sourceSnapshots = sqliteTable('source_snapshots', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  runId: integer('run_id').notNull(),
+  sourceType: text('source_type').notNull(),
+  title: text('title'),
+  url: text('url'),
+  content: text('content'),
+  metadata: text('metadata'),
+  createdAt: text('created_at').notNull(),
+})
+
+export const assetGenerationCache = sqliteTable('asset_generation_cache', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  assetType: text('asset_type').notNull(),
+  cacheKey: text('cache_key').notNull().unique(),
+  provider: text('provider').notNull(),
+  model: text('model'),
+  prompt: text('prompt').notNull(),
+  referenceMode: text('reference_mode'),
+  sourceImageGenerationId: integer('source_image_generation_id'),
+  sourceVideoGenerationId: integer('source_video_generation_id'),
+  imageUrl: text('image_url'),
+  videoUrl: text('video_url'),
+  localPath: text('local_path'),
+  metadata: text('metadata'),
+  status: text('status').notNull().default('completed'),
+  hitCount: integer('hit_count').notNull().default(0),
+  lastHitAt: text('last_hit_at'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
 })
 
 export const props = sqliteTable('props', {
@@ -319,6 +508,27 @@ export const assets = sqliteTable('assets', {
   videoGenId: integer('video_gen_id'),
   isFavorite: integer('is_favorite', { mode: 'boolean' }).default(false),
   viewCount: integer('view_count').default(0),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  deletedAt: text('deleted_at'),
+})
+
+export const audioCues = sqliteTable('audio_cues', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  scopeType: text('scope_type').notNull(),
+  scopeId: integer('scope_id').notNull(),
+  layerType: text('layer_type').notNull(),
+  assetId: integer('asset_id'),
+  prompt: text('prompt'),
+  startMs: integer('start_ms').notNull().default(0),
+  targetDurationMs: integer('target_duration_ms'),
+  volumeDb: real('volume_db').notNull().default(0),
+  fadeInMs: integer('fade_in_ms').notNull().default(0),
+  fadeOutMs: integer('fade_out_ms').notNull().default(0),
+  loop: integer('loop', { mode: 'boolean' }).default(false),
+  duckDialogue: integer('duck_dialogue', { mode: 'boolean' }).default(false),
+  sortOrder: integer('sort_order').notNull().default(0),
+  metadata: text('metadata'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
   deletedAt: text('deleted_at'),

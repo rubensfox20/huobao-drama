@@ -4,6 +4,8 @@ import * as schema from './schema.js'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { runMigrations } from './migrations/index.js'
+import { protectPersistedSecrets } from '../utils/secrets.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '../../../data/huobao_drama.db')
@@ -47,6 +49,8 @@ sqlite.exec(`
     image_config_id INTEGER,
     video_config_id INTEGER,
     audio_config_id INTEGER,
+    default_motion_preset TEXT DEFAULT 'drift',
+    default_subtitle_mode TEXT DEFAULT 'dynamic',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     deleted_at TEXT
@@ -60,6 +64,7 @@ sqlite.exec(`
     description TEXT,
     appearance TEXT,
     personality TEXT,
+    visual_profile TEXT,
     voice_style TEXT,
     image_url TEXT,
     reference_images TEXT,
@@ -80,6 +85,7 @@ sqlite.exec(`
     location TEXT NOT NULL,
     time TEXT NOT NULL,
     prompt TEXT NOT NULL,
+    visual_profile TEXT,
     storyboard_count INTEGER DEFAULT 1,
     image_url TEXT,
     status TEXT DEFAULT 'pending',
@@ -110,6 +116,14 @@ sqlite.exec(`
     dialogue TEXT,
     description TEXT,
     duration INTEGER DEFAULT 0,
+    generation_spec TEXT,
+    review_status TEXT,
+    review_notes TEXT,
+    continuity_mode TEXT DEFAULT 'auto',
+    continuity_source_storyboard_id INTEGER,
+    motion_preset_override TEXT,
+    last_composed_motion_preset TEXT,
+    last_composed_subtitle_mode TEXT,
     composed_image TEXT,
     first_frame_image TEXT,
     last_frame_image TEXT,
@@ -145,6 +159,42 @@ sqlite.exec(`
     ON episode_scenes (episode_id);
   CREATE INDEX IF NOT EXISTS idx_episode_scenes_scene_id
     ON episode_scenes (scene_id);
+
+  CREATE TABLE IF NOT EXISTS episode_props (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    episode_id INTEGER NOT NULL,
+    prop_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_episode_props_episode_id
+    ON episode_props (episode_id);
+  CREATE INDEX IF NOT EXISTS idx_episode_props_prop_id
+    ON episode_props (prop_id);
+
+  CREATE TABLE IF NOT EXISTS extraction_mentions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    episode_id INTEGER NOT NULL,
+    drama_id INTEGER NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_identity TEXT NOT NULL,
+    entity_label TEXT,
+    signal TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 0,
+    source_quote TEXT,
+    source_span TEXT,
+    scene_index INTEGER,
+    location TEXT,
+    time TEXT,
+    metadata TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_extraction_mentions_episode_id
+    ON extraction_mentions (episode_id);
+  CREATE INDEX IF NOT EXISTS idx_extraction_mentions_entity_type
+    ON extraction_mentions (episode_id, entity_type);
+  CREATE INDEX IF NOT EXISTS idx_extraction_mentions_identity
+    ON extraction_mentions (episode_id, entity_type, entity_identity);
 
   CREATE TABLE IF NOT EXISTS storyboard_characters (
     storyboard_id INTEGER NOT NULL,
@@ -342,22 +392,207 @@ sqlite.exec(`
     updated_at TEXT NOT NULL,
     deleted_at TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS audio_cues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope_type TEXT NOT NULL,
+    scope_id INTEGER NOT NULL,
+    layer_type TEXT NOT NULL,
+    asset_id INTEGER,
+    prompt TEXT,
+    start_ms INTEGER NOT NULL DEFAULT 0,
+    target_duration_ms INTEGER,
+    volume_db REAL NOT NULL DEFAULT 0,
+    fade_in_ms INTEGER NOT NULL DEFAULT 0,
+    fade_out_ms INTEGER NOT NULL DEFAULT 0,
+    loop INTEGER DEFAULT 0,
+    duck_dialogue INTEGER DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    metadata TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_audio_cues_scope
+    ON audio_cues (scope_type, scope_id, sort_order, id);
+  CREATE INDEX IF NOT EXISTS idx_audio_cues_asset_id
+    ON audio_cues (asset_id);
+
+  CREATE TABLE IF NOT EXISTS workflow_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    related_entity_type TEXT,
+    related_entity_id INTEGER,
+    drama_id INTEGER,
+    episode_id INTEGER,
+    provider TEXT,
+    model TEXT,
+    input_summary TEXT,
+    output_summary TEXT,
+    error_msg TEXT,
+    metadata TEXT,
+    retry_of_job_id INTEGER,
+    started_at TEXT,
+    completed_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS provider_connections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT NOT NULL UNIQUE,
+    active_source TEXT,
+    oauth_payload TEXT,
+    ignored_auth_signature TEXT,
+    account_label TEXT,
+    metadata TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_connections_provider
+    ON provider_connections (provider);
+  CREATE INDEX IF NOT EXISTS idx_workflow_jobs_kind_status
+    ON workflow_jobs (kind, status);
+  CREATE INDEX IF NOT EXISTS idx_workflow_jobs_related_entity
+    ON workflow_jobs (related_entity_type, related_entity_id);
+  CREATE INDEX IF NOT EXISTS idx_workflow_jobs_episode_id
+    ON workflow_jobs (episode_id);
+
+  CREATE TABLE IF NOT EXISTS provider_usage_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workflow_job_id INTEGER,
+    service_type TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT,
+    operation TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'started',
+    request_hash TEXT,
+    error_msg TEXT,
+    latency_ms INTEGER,
+    metadata TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_provider_usage_events_workflow_job_id
+    ON provider_usage_events (workflow_job_id);
+  CREATE INDEX IF NOT EXISTS idx_provider_usage_events_provider_status
+    ON provider_usage_events (provider, status);
+
+  CREATE TABLE IF NOT EXISTS prompt_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    description TEXT,
+    content TEXT NOT NULL,
+    variables TEXT,
+    version INTEGER NOT NULL DEFAULT 1,
+    is_default INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS prompt_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prompt_template_id INTEGER,
+    template_key TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    content TEXT NOT NULL,
+    variables TEXT,
+    metadata TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_prompt_history_template_key
+    ON prompt_history (template_key, version);
+
+  CREATE TABLE IF NOT EXISTS ideas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT,
+    genre TEXT,
+    tone TEXT,
+    language TEXT DEFAULT 'pt-BR',
+    status TEXT NOT NULL DEFAULT 'draft',
+    seed_prompt TEXT,
+    metadata TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS discovery_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    idea_id INTEGER,
+    mode TEXT NOT NULL DEFAULT 'no-web',
+    status TEXT NOT NULL DEFAULT 'queued',
+    query TEXT,
+    summary TEXT,
+    provider TEXT,
+    model TEXT,
+    error_msg TEXT,
+    metadata TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_discovery_runs_idea_id
+    ON discovery_runs (idea_id);
+
+  CREATE TABLE IF NOT EXISTS discovery_candidates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    summary TEXT,
+    hook TEXT,
+    premise TEXT,
+    tags TEXT,
+    score REAL,
+    metadata TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_discovery_candidates_run_id
+    ON discovery_candidates (run_id);
+
+  CREATE TABLE IF NOT EXISTS source_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL,
+    source_type TEXT NOT NULL,
+    title TEXT,
+    url TEXT,
+    content TEXT,
+    metadata TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_source_snapshots_run_id
+    ON source_snapshots (run_id);
+
+  CREATE TABLE IF NOT EXISTS asset_generation_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_type TEXT NOT NULL,
+    cache_key TEXT NOT NULL UNIQUE,
+    provider TEXT NOT NULL,
+    model TEXT,
+    prompt TEXT NOT NULL,
+    reference_mode TEXT,
+    source_image_generation_id INTEGER,
+    source_video_generation_id INTEGER,
+    image_url TEXT,
+    video_url TEXT,
+    local_path TEXT,
+    metadata TEXT,
+    status TEXT NOT NULL DEFAULT 'completed',
+    hit_count INTEGER NOT NULL DEFAULT 0,
+    last_hit_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_asset_generation_cache_asset_type
+    ON asset_generation_cache (asset_type);
 `)
-
-function ensureColumn(table: string, column: string, definition: string) {
-  const tableExists = sqlite.prepare(
-    `SELECT 1 as ok FROM sqlite_master WHERE type='table' AND name=? LIMIT 1`,
-  ).get(table) as { ok: number } | undefined
-  if (!tableExists) return
-  const columns = sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
-  if (!columns.some(col => col.name === column)) {
-    sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
-  }
-}
-
-ensureColumn('episodes', 'image_config_id', 'INTEGER')
-ensureColumn('episodes', 'video_config_id', 'INTEGER')
-ensureColumn('episodes', 'audio_config_id', 'INTEGER')
+runMigrations(sqlite)
+protectPersistedSecrets(sqlite)
 
 export const db = drizzle(sqlite, { schema })
 export { schema }

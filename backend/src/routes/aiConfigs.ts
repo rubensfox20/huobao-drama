@@ -1,266 +1,119 @@
 import { Hono } from 'hono'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db, schema } from '../db/index.js'
-import { success, notFound, created, badRequest, now } from '../utils/response.js'
+import { success, notFound, created, now } from '../utils/response.js'
 import { toSnakeCase } from '../utils/transform.js'
-import { joinProviderUrl } from '../services/adapters/url.js'
 import { redactUrl, logTaskError, logTaskProgress, logTaskSuccess } from '../utils/task-logger.js'
+import { buildProviderProbe } from '../services/provider-probe.js'
+import { defaultConnectionBaseUrl, defaultConnectionModel, isConnectionBackedTextProvider } from '../services/provider-connections/shared.js'
+import { probeConnectionBackedTextProvider } from '../services/text-provider.js'
+import { parseJsonBody, parseParams, parseQuery, z, idParamSchema } from '../utils/validation.js'
+import { requireAdminAuth } from '../middleware/admin-auth.js'
+import {
+  parseModelList,
+  revealAIConfigApiKey,
+  sealAIConfigApiKey,
+  serializeAIConfig,
+  type AIConfigRow,
+} from '../services/ai-configs.js'
+import type { ConnectableProvider } from '../services/provider-connections/shared.js'
 
 const app = new Hono()
+app.use('*', requireAdminAuth)
 
-const HUOBAO_PRESET_SERVICES = [
-  { serviceType: 'text', label: '文本', provider: 'chatfire', baseUrl: 'https://api.chatfire.site', model: 'gemini-3-pro-preview', priority: 100 },
-  { serviceType: 'image', label: '图片', provider: 'gemini', baseUrl: 'https://api.chatfire.site', model: 'gemini-3-pro-image-preview', priority: 99 },
-  { serviceType: 'video', label: '视频', provider: 'volcengine', baseUrl: 'https://api.chatfire.site/volcengine', model: 'doubao-seedance-1-5-pro-251215', priority: 98 },
-  { serviceType: 'audio', label: '音频', provider: 'minimax', baseUrl: 'https://api.chatfire.site/minimax', model: 'speech-2.8-hd', priority: 97 },
-] as const
+const listQuerySchema = z.object({
+  service_type: z.string().trim().optional(),
+})
 
-const HUOBAO_AGENT_DEFAULTS = [
-  { agentType: 'script_rewriter', name: '剧本改写' },
-  { agentType: 'extractor', name: '角色场景提取' },
-  { agentType: 'storyboard_breaker', name: '分镜拆解' },
-  { agentType: 'voice_assigner', name: '音色分配' },
-  { agentType: 'grid_prompt_generator', name: '图片提示词生成' },
-] as const
+const aiConfigBaseSchema = z.object({
+  service_type: z.string().trim().min(1),
+  provider: z.string().trim().min(1),
+  name: z.string().trim().min(1).optional(),
+  base_url: z.string().trim().optional().default(''),
+  api_key: z.string().optional(),
+  model: z.array(z.string().trim().min(1)).optional(),
+  priority: z.coerce.number().int().min(0).optional().default(0),
+  is_active: z.boolean().optional(),
+})
 
-const HUOBAO_AGENT_MODEL = 'gemini-3-pro-preview'
+const aiConfigUpdateSchema = z.object({
+  provider: z.string().trim().min(1).optional(),
+  name: z.string().trim().min(1).optional(),
+  base_url: z.string().trim().optional(),
+  api_key: z.string().optional(),
+  clear_api_key: z.boolean().optional(),
+  model: z.array(z.string().trim().min(1)).optional(),
+  priority: z.coerce.number().int().min(0).optional(),
+  is_active: z.boolean().optional(),
+})
 
-function bearerHeaders(apiKey?: string, withJson = false) {
-  const headers: Record<string, string> = {}
-  if (apiKey) headers.Authorization = `Bearer ${apiKey}`
-  if (withJson) headers['Content-Type'] = 'application/json'
-  return headers
+const aiConfigTestSchema = z.object({
+  service_type: z.string().trim().min(1),
+  provider: z.string().trim().min(1),
+  base_url: z.string().trim().optional().default(''),
+  api_key: z.string().optional(),
+  model: z.union([z.array(z.string().trim().min(1)), z.string().trim().min(1)]).optional(),
+})
+
+function pickTestModel(raw: string[] | string | undefined) {
+  if (Array.isArray(raw)) return raw[0]
+  return raw
 }
 
-function geminiHeaders(apiKey?: string, withJson = false) {
-  const headers: Record<string, string> = {}
-  if (apiKey) {
-    headers.Authorization = `Bearer ${apiKey}`
-    headers['x-goog-api-key'] = apiKey
-  }
-  if (withJson) headers['Content-Type'] = 'application/json'
-  return headers
-}
-
-function viduHeaders(apiKey?: string, withJson = false) {
-  const headers: Record<string, string> = {}
-  if (apiKey) headers.Authorization = `Token ${apiKey}`
-  if (withJson) headers['Content-Type'] = 'application/json'
-  return headers
-}
-
-function buildProbe(serviceType: string, provider: string, baseUrl: string, model?: string, apiKey?: string) {
-  const p = provider.toLowerCase()
-  const m = model || ''
-
-  if (p === 'gemini') {
-    const url = new URL(joinProviderUrl(baseUrl, '/v1beta', `/models/${m || 'gemini-2.5-flash'}:generateContent`))
-    if (apiKey) url.searchParams.set('key', apiKey)
-    return { method: 'POST', url: url.toString(), headers: geminiHeaders(apiKey, true), body: {} }
-  }
-
-  if (p === 'openai' || p === 'openrouter' || p === 'chatfire') {
-    return {
-      method: 'GET',
-      url: joinProviderUrl(baseUrl, '/v1', '/models'),
-      headers: bearerHeaders(apiKey),
-      body: undefined,
-    }
-  }
-
-  if (p === 'ali') {
-    return {
-      method: 'POST',
-      url: joinProviderUrl(baseUrl, '/api/v1', serviceType === 'video'
-        ? '/services/aigc/video-generation/video-synthesis'
-        : '/services/aigc/image-generation/generation'),
-      headers: bearerHeaders(apiKey, true),
-      body: {},
-    }
-  }
-
-  if (p === 'volcengine') {
-    const path = serviceType === 'video'
-      ? '/contents/generations/tasks'
-      : '/images/generations'
-    return {
-      method: 'POST',
-      url: joinProviderUrl(baseUrl, '/api/v3', path),
-      headers: bearerHeaders(apiKey, true),
-      body: {},
-    }
-  }
-
-  if (p === 'minimax') {
-    const path = serviceType === 'audio'
-      ? '/t2a_v2'
-      : serviceType === 'video'
-        ? '/video_generation'
-        : '/image_generation'
-    return {
-      method: 'POST',
-      url: joinProviderUrl(baseUrl, '/v1', path),
-      headers: bearerHeaders(apiKey, true),
-      body: {},
-    }
-  }
-
-  if (p === 'vidu') {
-    return {
-      method: 'POST',
-      url: joinProviderUrl(baseUrl, '', '/ent/v2/img2video'),
-      headers: viduHeaders(apiKey, true),
-      body: {},
-    }
-  }
-
+function resolveProbePayload(input: {
+  serviceType: string
+  provider: string
+  baseUrl: string
+  apiKey: string
+  model?: string[] | string
+}) {
   return {
-    method: 'GET',
-    url: joinProviderUrl(baseUrl, '', m ? `/${m}` : '/'),
-    headers: bearerHeaders(apiKey),
-    body: undefined,
+    serviceType: input.serviceType,
+    provider: input.provider,
+    baseUrl: input.baseUrl,
+    apiKey: input.apiKey,
+    model: pickTestModel(input.model),
   }
 }
 
-// GET /ai-configs?service_type=text
-app.get('/', async (c) => {
-  const serviceType = c.req.query('service_type')
-  let rows = db.select().from(schema.aiServiceConfigs).all()
-  if (serviceType) rows = rows.filter(r => r.serviceType === serviceType)
-
-  const parsed = rows.map(r => ({
-    ...toSnakeCase(r),
-    model: r.model ? JSON.parse(r.model) : [],
-  }))
-  return success(c, parsed)
-})
-
-// POST /ai-configs
-app.post('/', async (c) => {
-  const body = await c.req.json()
-  const ts = now()
-
-  // 验证必填字段
-  if (!body.service_type || !body.provider) {
-    return badRequest(c, 'service_type and provider are required')
-  }
-
-  const res = db.insert(schema.aiServiceConfigs).values({
-    serviceType: body.service_type,
-    provider: body.provider,
-    name: body.name || `${body.provider}-${body.service_type}`,
-    baseUrl: body.base_url || '',
-    apiKey: body.api_key || '',
-    model: JSON.stringify(body.model || []),
-    priority: body.priority || 0,
-    isActive: true,
-    createdAt: ts,
-    updatedAt: ts,
-  }).run()
-
-  const [row] = db.select().from(schema.aiServiceConfigs)
-    .where(eq(schema.aiServiceConfigs.id, Number(res.lastInsertRowid))).all()
-
-  return created(c, {
-    ...toSnakeCase(row),
-    model: row.model ? JSON.parse(row.model) : [],
-  })
-})
-
-// POST /ai-configs/huobao-preset
-app.post('/huobao-preset', async (c) => {
-  const body = await c.req.json()
-  const apiKey = String(body.api_key || '').trim()
-  if (!apiKey) return badRequest(c, 'api_key is required')
-
-  const ts = now()
-
-  for (const preset of HUOBAO_PRESET_SERVICES) {
-    const [existing] = db.select().from(schema.aiServiceConfigs).where(eq(schema.aiServiceConfigs.serviceType, preset.serviceType)).all()
-      .filter(row => row.provider === preset.provider)
-
-    const values = {
-      serviceType: preset.serviceType,
-      provider: preset.provider,
-      name: `火宝默认${preset.label}服务`,
-      baseUrl: preset.baseUrl,
-      apiKey,
-      model: JSON.stringify([preset.model]),
-      priority: preset.priority,
-      isActive: true,
-      updatedAt: ts,
-    }
-
-    if (existing) {
-      db.update(schema.aiServiceConfigs).set(values).where(eq(schema.aiServiceConfigs.id, existing.id)).run()
-    } else {
-      db.insert(schema.aiServiceConfigs).values({
-        ...values,
-        createdAt: ts,
-      }).run()
+async function executeConfigProbe(input: {
+  serviceType: string
+  provider: string
+  baseUrl: string
+  apiKey: string
+  model?: string[] | string
+}) {
+  if (input.serviceType === 'text' && isConnectionBackedTextProvider(input.provider)) {
+    const snapshot = await probeConnectionBackedTextProvider(input.provider, pickTestModel(input.model))
+    const service = snapshot.services?.[0]
+    return {
+      ok: snapshot.status === 'available',
+      reachable: snapshot.status !== 'not_configured',
+      status: service?.statusCode ?? (snapshot.status === 'available' ? 200 : null),
+      status_text: snapshot.status,
+      method: service?.method || 'POST',
+      url: service?.url || defaultConnectionBaseUrl(input.provider),
+      message: service?.message || snapshot.status,
+      response_preview: service?.message || '',
     }
   }
 
-  for (const agent of HUOBAO_AGENT_DEFAULTS) {
-    const [existing] = db.select().from(schema.agentConfigs).where(eq(schema.agentConfigs.agentType, agent.agentType)).all()
-    const values = {
-      name: agent.name,
-      model: HUOBAO_AGENT_MODEL,
-      isActive: true,
-      updatedAt: ts,
-    }
-
-    if (existing) {
-      db.update(schema.agentConfigs).set(values).where(eq(schema.agentConfigs.id, existing.id)).run()
-    } else {
-      db.insert(schema.agentConfigs).values({
-        agentType: agent.agentType,
-        description: '',
-        model: HUOBAO_AGENT_MODEL,
-        name: agent.name,
-        systemPrompt: '',
-        temperature: 0.7,
-        maxTokens: 4096,
-        maxIterations: 10,
-        isActive: true,
-        createdAt: ts,
-        updatedAt: ts,
-      }).run()
-    }
+  if (!String(input.baseUrl || '').trim()) {
+    throw new Error('base_url is required')
   }
 
-  const configs = db.select().from(schema.aiServiceConfigs).all().map(row => ({
-    ...toSnakeCase(row),
-    model: row.model ? JSON.parse(row.model) : [],
-  }))
-  const agents = db.select().from(schema.agentConfigs).all().map(row => toSnakeCase(row))
-
-  logTaskSuccess('AIConfig', 'huobao-preset-applied', {
-    serviceCount: HUOBAO_PRESET_SERVICES.length,
-    agentCount: HUOBAO_AGENT_DEFAULTS.length,
-  })
-
-  return success(c, {
-    configs,
-    agents,
-    agent_model: HUOBAO_AGENT_MODEL,
-  })
-})
-
-// POST /ai-configs/test
-app.post('/test', async (c) => {
-  const body = await c.req.json()
-  if (!body.service_type || !body.provider || !body.base_url) {
-    return badRequest(c, 'service_type, provider and base_url are required')
-  }
-
-  const model = Array.isArray(body.model) ? body.model[0] : body.model
-  const probe = buildProbe(body.service_type, body.provider, body.base_url, model, body.api_key)
+  const probe = buildProviderProbe(
+    input.serviceType,
+    input.provider,
+    input.baseUrl,
+    pickTestModel(input.model),
+    input.apiKey,
+  )
   const probeUrl = redactUrl(probe.url)
 
   logTaskProgress('AIConfig', 'probe-start', {
-    serviceType: body.service_type,
-    provider: body.provider,
+    serviceType: input.serviceType,
+    provider: input.provider,
     method: probe.method,
     url: probeUrl,
   })
@@ -281,78 +134,174 @@ app.post('/test', async (c) => {
       method: probe.method,
       url: probeUrl,
       message: reachable
-        ? (resp.ok ? '端点可访问，认证与路径基本正常' : '端点已响应，请根据状态码判断认证或路径是否正确')
-        : '端点未按预期响应，请检查 Base URL 和代理前缀',
+        ? (resp.ok ? 'Endpoint acessivel, autenticacao e caminho normais.' : 'Endpoint respondeu. Verifique o codigo de status.')
+        : 'O endpoint nao respondeu como esperado. Verifique a Base URL.',
       response_preview: text.slice(0, 240),
     }
     if (reachable) {
       logTaskSuccess('AIConfig', 'probe-done', {
-        provider: body.provider,
+        provider: input.provider,
         status: resp.status,
         url: probeUrl,
       })
     } else {
       logTaskError('AIConfig', 'probe-unexpected', {
-        provider: body.provider,
+        provider: input.provider,
         status: resp.status,
         url: probeUrl,
       })
     }
-    return success(c, payload)
+    return payload
   } catch (error: any) {
     logTaskError('AIConfig', 'probe-failed', {
-      provider: body.provider,
+      provider: input.provider,
       url: probeUrl,
       error: error.message,
     })
-    return success(c, {
+    return {
       ok: false,
       reachable: false,
       method: probe.method,
       url: probeUrl,
-      message: error.message || '请求失败',
+      message: error.message || 'Falha na requisicao',
       response_preview: '',
-    })
+    }
   }
-})
+}
 
-// GET /ai-configs/:id
-app.get('/:id', async (c) => {
-  const id = Number(c.req.param('id'))
+function getAIConfigById(id: number) {
   const [row] = db.select().from(schema.aiServiceConfigs).where(eq(schema.aiServiceConfigs.id, id)).all()
-  if (!row) return notFound(c)
-  return success(c, {
-    ...toSnakeCase(row),
-    model: row.model ? JSON.parse(row.model) : [],
+  return row as AIConfigRow | undefined
+}
+
+app.get('/', async (c) => {
+  const parsed = parseQuery(c, listQuerySchema)
+  if (!parsed.ok) return parsed.response
+
+  const conditions = []
+  if (parsed.data.service_type) {
+    conditions.push(eq(schema.aiServiceConfigs.serviceType, parsed.data.service_type))
+  }
+
+  const rows = conditions.length
+    ? db.select().from(schema.aiServiceConfigs).where(and(...conditions)).all()
+    : db.select().from(schema.aiServiceConfigs).all()
+
+  return success(c, rows.map(row => serializeAIConfig(row as AIConfigRow)))
+})
+
+app.post('/', async (c) => {
+  const parsed = await parseJsonBody(c, aiConfigBaseSchema)
+  if (!parsed.ok) return parsed.response
+
+  const body = parsed.data
+  const ts = now()
+  const isConnectionBacked = body.service_type === 'text' && isConnectionBackedTextProvider(body.provider)
+  const connectionProvider = body.provider as ConnectableProvider
+  const defaultBaseUrl = isConnectionBacked ? defaultConnectionBaseUrl(connectionProvider) : ''
+  const defaultModel = isConnectionBacked ? defaultConnectionModel(connectionProvider) : ''
+  const hasExistingActiveTextConfig = body.service_type === 'text'
+    && db.select().from(schema.aiServiceConfigs)
+      .where(eq(schema.aiServiceConfigs.serviceType, 'text'))
+      .all()
+      .some(row => row.isActive)
+  const shouldActivate = body.is_active ?? !(isConnectionBacked && hasExistingActiveTextConfig)
+
+  const result = db.insert(schema.aiServiceConfigs).values({
+    serviceType: body.service_type,
+    provider: body.provider,
+    name: body.name || `${body.provider}-${body.service_type}`,
+    baseUrl: body.base_url || defaultBaseUrl,
+    apiKey: sealAIConfigApiKey(body.api_key || ''),
+    model: JSON.stringify((body.model?.length ? body.model : [defaultModel]).filter(Boolean)),
+    priority: body.priority,
+    isActive: shouldActivate,
+    createdAt: ts,
+    updatedAt: ts,
+  }).run()
+
+  const row = getAIConfigById(Number(result.lastInsertRowid))
+  return created(c, row ? serializeAIConfig(row) : null)
+})
+
+app.post('/test', async (c) => {
+  const parsed = await parseJsonBody(c, aiConfigTestSchema)
+  if (!parsed.ok) return parsed.response
+  if (
+    !(parsed.data.service_type === 'text' && isConnectionBackedTextProvider(parsed.data.provider))
+    && !String(parsed.data.base_url || '').trim()
+  ) {
+    return c.json({ code: 400, message: 'base_url is required' }, 400)
+  }
+
+  const payload = resolveProbePayload({
+    serviceType: parsed.data.service_type,
+    provider: parsed.data.provider,
+    baseUrl: parsed.data.base_url,
+    apiKey: parsed.data.api_key || '',
+    model: parsed.data.model,
   })
+
+  return success(c, await executeConfigProbe(payload))
 })
 
-// PUT /ai-configs/:id
+app.get('/:id', async (c) => {
+  const parsed = parseParams(c, idParamSchema)
+  if (!parsed.ok) return parsed.response
+
+  const row = getAIConfigById(parsed.data.id)
+  if (!row) return notFound(c)
+  return success(c, serializeAIConfig(row))
+})
+
+app.post('/:id/test', async (c) => {
+  const parsed = parseParams(c, idParamSchema)
+  if (!parsed.ok) return parsed.response
+
+  const row = getAIConfigById(parsed.data.id)
+  if (!row) return notFound(c)
+
+  return success(c, await executeConfigProbe({
+    serviceType: row.serviceType,
+    provider: String(row.provider || ''),
+    baseUrl: row.baseUrl,
+    apiKey: revealAIConfigApiKey(row.apiKey),
+    model: parseModelList(row.model),
+  }))
+})
+
 app.put('/:id', async (c) => {
-  const id = Number(c.req.param('id'))
-  const body = await c.req.json()
-  const updates: Record<string, any> = { updatedAt: now() }
+  const paramResult = parseParams(c, idParamSchema)
+  if (!paramResult.ok) return paramResult.response
+  const bodyResult = await parseJsonBody(c, aiConfigUpdateSchema)
+  if (!bodyResult.ok) return bodyResult.response
 
-  if ('provider' in body) updates.provider = body.provider
-  if ('name' in body) updates.name = body.name
-  if ('base_url' in body) updates.baseUrl = body.base_url
-  if ('api_key' in body) updates.apiKey = body.api_key
-  if ('model' in body) updates.model = JSON.stringify(body.model)
-  if ('priority' in body) updates.priority = body.priority
-  if ('is_active' in body) updates.isActive = body.is_active
+  const updates: Record<string, unknown> = { updatedAt: now() }
+  const body = bodyResult.data
 
-  db.update(schema.aiServiceConfigs).set(updates).where(eq(schema.aiServiceConfigs.id, id)).run()
-  return success(c)
+  if (body.provider !== undefined) updates.provider = body.provider
+  if (body.name !== undefined) updates.name = body.name
+  if (body.base_url !== undefined) updates.baseUrl = body.base_url
+  if (body.clear_api_key) updates.apiKey = ''
+  else if (typeof body.api_key === 'string' && body.api_key.trim()) updates.apiKey = sealAIConfigApiKey(body.api_key)
+  if (body.model !== undefined) updates.model = JSON.stringify(body.model)
+  if (body.priority !== undefined) updates.priority = body.priority
+  if (body.is_active !== undefined) updates.isActive = body.is_active
+
+  db.update(schema.aiServiceConfigs).set(updates).where(eq(schema.aiServiceConfigs.id, paramResult.data.id)).run()
+  const row = getAIConfigById(paramResult.data.id)
+  if (!row) return notFound(c)
+  return success(c, serializeAIConfig(row))
 })
 
-// DELETE /ai-configs/:id
 app.delete('/:id', async (c) => {
-  const id = Number(c.req.param('id'))
-  db.delete(schema.aiServiceConfigs).where(eq(schema.aiServiceConfigs.id, id)).run()
+  const parsed = parseParams(c, idParamSchema)
+  if (!parsed.ok) return parsed.response
+
+  db.delete(schema.aiServiceConfigs).where(eq(schema.aiServiceConfigs.id, parsed.data.id)).run()
   return success(c)
 })
 
-// GET /ai-providers
 export const aiProviders = new Hono()
 aiProviders.get('/', async (c) => {
   const rows = db.select().from(schema.aiServiceProviders).all()

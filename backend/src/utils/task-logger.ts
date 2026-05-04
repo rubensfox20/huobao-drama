@@ -1,4 +1,11 @@
 type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'SUCCESS'
+type TaskLogEntry = {
+  scope: string
+  action: string
+  level: LogLevel
+  meta?: Record<string, unknown>
+  createdAt: string
+}
 
 const C = {
   reset: '\x1b[0m',
@@ -11,6 +18,9 @@ const C = {
   blue: '\x1b[34m',
 }
 
+const taskLogBuffer: TaskLogEntry[] = []
+const MAX_LOG_BUFFER = 400
+
 function colorFor(level: LogLevel) {
   if (level === 'SUCCESS') return C.green
   if (level === 'WARN') return C.yellow
@@ -19,7 +29,7 @@ function colorFor(level: LogLevel) {
 }
 
 function timeText() {
-  return new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  return new Date().toLocaleTimeString('pt-BR', { hour12: false })
 }
 
 function safeValue(value: unknown) {
@@ -44,7 +54,7 @@ function formatMeta(meta?: Record<string, unknown>) {
 export function redactUrl(rawUrl: string) {
   try {
     const url = new URL(rawUrl)
-    for (const key of ['key', 'api_key', 'apikey', 'token', 'access_token']) {
+    for (const key of ['key', 'api_key', 'apikey', 'api-key', 'x-api-key', 'x-goog-api-key', 'token', 'access_token', 'refresh_token']) {
       if (url.searchParams.has(key)) {
         url.searchParams.set(key, '***')
       }
@@ -52,8 +62,28 @@ export function redactUrl(rawUrl: string) {
     return url.toString()
   } catch {
     return rawUrl
-      .replace(/([?&](?:key|api_key|apikey|token|access_token)=)[^&]+/gi, '$1***')
+      .replace(/([?&](?:key|api_key|apikey|api-key|x-api-key|x-goog-api-key|token|access_token|refresh_token)=)[^&]+/gi, '$1***')
   }
+}
+
+function isSecretKey(key: string) {
+  const lower = key.toLowerCase()
+  return lower === 'key'
+    || lower === 'authorization'
+    || lower === 'password'
+    || lower === 'secret'
+    || lower === 'client_secret'
+    || lower.includes('authorization')
+    || lower.includes('api_key')
+    || lower.includes('apikey')
+    || lower.includes('api-key')
+    || lower.includes('access_token')
+    || lower.includes('refresh_token')
+    || lower.includes('id_token')
+    || lower.includes('token')
+    || lower.includes('secret')
+    || lower.endsWith('_key')
+    || lower.endsWith('-key')
 }
 
 function sanitizeValue(value: unknown): unknown {
@@ -69,8 +99,7 @@ function sanitizeValue(value: unknown): unknown {
     const out: Record<string, unknown> = {}
     for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
       const lower = key.toLowerCase()
-      if (['authorization', 'api_key', 'apikey', 'apiKey', 'token', 'access_token'].includes(key) ||
-        lower.includes('authorization') || lower.includes('token') || lower.includes('apikey') || lower.includes('api_key')) {
+      if (isSecretKey(key)) {
         out[key] = '***'
         continue
       }
@@ -111,6 +140,16 @@ function truncateString(value: string, edge = 120) {
 
 export function logTask(scope: string, action: string, meta?: Record<string, unknown>, level: LogLevel = 'INFO') {
   const color = colorFor(level)
+  taskLogBuffer.push({
+    scope,
+    action,
+    level,
+    meta,
+    createdAt: new Date().toISOString(),
+  })
+  if (taskLogBuffer.length > MAX_LOG_BUFFER) {
+    taskLogBuffer.splice(0, taskLogBuffer.length - MAX_LOG_BUFFER)
+  }
   console.log(`${C.dim}${timeText()}${C.reset} ${color}[${scope}]${C.reset} ${action}${formatMeta(meta)}`)
 }
 
@@ -140,4 +179,8 @@ export function logTaskPayload(scope: string, action: string, payload: unknown) 
     ? sanitized
     : JSON.stringify(sanitized, null, 2)
   console.log(`${C.dim}${timeText()}${C.reset} ${C.blue}[${scope}]${C.reset} ${action}\n${serialized}`)
+}
+
+export function getRecentTaskLogs(limit = 100) {
+  return taskLogBuffer.slice(-limit)
 }

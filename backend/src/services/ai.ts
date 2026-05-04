@@ -1,10 +1,10 @@
-/**
- * AI 服务抽象层 — 从数据库配置中获取 provider 和 API key
- */
+
 import { db, schema } from '../db/index.js'
 import { eq } from 'drizzle-orm'
 import { logTaskProgress, logTaskWarn } from '../utils/task-logger.js'
 import { joinProviderUrl } from './adapters/url.js'
+import { revealAIConfigApiKey } from './ai-configs.js'
+import { getResolvedTextConfig, type ResolvedTextConfig } from './text-provider.js'
 
 export type ServiceType = 'text' | 'image' | 'video' | 'audio'
 
@@ -13,6 +13,12 @@ export interface AIConfig {
   baseUrl: string
   apiKey: string
   model: string
+  headers?: Record<string, string>
+  fetch?: any
+  authSource?: string
+  accountLabel?: string | null
+  requiresManualApiKey?: boolean
+  connectionStatus?: 'connected' | 'not_configured'
 }
 
 export function getTextProviderBaseUrl(config: AIConfig) {
@@ -22,8 +28,12 @@ export function getTextProviderBaseUrl(config: AIConfig) {
     return joinProviderUrl(config.baseUrl, '/v1', '')
   }
 
+  if (provider === 'gemini') {
+    return joinProviderUrl(config.baseUrl, '/v1beta/openai', '')
+  }
+
   if (provider === 'volcengine') {
-    return joinProviderUrl(config.baseUrl, '/api/v3', '')
+    return joinProviderUrl(config.baseUrl, '/api/v1', '')
   }
 
   if (provider === 'ali') {
@@ -38,7 +48,7 @@ export function getActiveConfig(serviceType: ServiceType): AIConfig | null {
     .where(eq(schema.aiServiceConfigs.serviceType, serviceType))
     .all()
     .filter(r => r.isActive)
-    .sort((a, b) => (b.priority || 0) - (a.priority || 0)) // 高优先级优先
+    .sort((a, b) => (b.priority || 0) - (a.priority || 0))
 
   const active = rows[0]
   if (!active) {
@@ -57,20 +67,18 @@ export function getActiveConfig(serviceType: ServiceType): AIConfig | null {
   return {
     provider: active.provider || '',
     baseUrl: active.baseUrl,
-    apiKey: active.apiKey,
+    apiKey: revealAIConfigApiKey(active.apiKey),
     model: models[0] || '',
   }
 }
 
 export function getTextConfig(): AIConfig {
-  const config = getActiveConfig('text')
-  if (!config) throw new Error('No active text AI config')
-  return config
+  return getResolvedTextConfig() as ResolvedTextConfig
 }
 
 export function getAudioConfig(): AIConfig {
   const config = getActiveConfig('audio')
-  if (!config) throw new Error('No active audio AI config — 请在设置中添加音频服务')
+  if (!config) throw new Error('Nenhuma configuração de IA de áudio está ativa. Adicione um serviço de áudio nas configurações.')
   return config
 }
 
@@ -99,7 +107,7 @@ export function getConfigById(id: number): AIConfig | null {
   return {
     provider: row.provider || '',
     baseUrl: row.baseUrl,
-    apiKey: row.apiKey,
+    apiKey: revealAIConfigApiKey(row.apiKey),
     model: models[0] || '',
   }
 }

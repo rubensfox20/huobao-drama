@@ -1,19 +1,29 @@
-/**
- * AI 音色管理
- * GET  /api/v1/ai-voices       - 获取音色列表
- * POST /api/v1/ai-voices/sync  - 从 MiniMax 同步音色
- */
+
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { db, schema } from '../db/index.js'
 import { success, badRequest, now } from '../utils/response.js'
 import { joinProviderUrl } from '../services/adapters/url.js'
+import { getBuiltinVoices } from '../services/voice-catalog.js'
+import { getActiveConfig } from '../services/ai.js'
+import { describeVoiceGender, inferVoiceGender } from '../services/voice-selection.js'
+import { requireAdminForWriteMethods } from '../middleware/admin-auth.js'
+import { revealAIConfigApiKey } from '../services/ai-configs.js'
 
 const app = new Hono()
+app.use('*', requireAdminForWriteMethods())
 
 // GET /ai-voices?provider=minimax
 app.get('/', async (c) => {
-  const provider = c.req.query('provider') || 'minimax'
+  const provider = c.req.query('provider') || getActiveConfig('audio')?.provider || 'minimax'
+  const builtinVoices = getBuiltinVoices(provider)
+  if (builtinVoices.length) {
+    return success(c, builtinVoices.map((voice) => ({
+      ...voice,
+      gender: describeVoiceGender(voice.gender),
+    })))
+  }
+
   const rows = db.select().from(schema.aiVoices)
     .where(eq(schema.aiVoices.provider, provider))
     .all()
@@ -24,6 +34,13 @@ app.get('/', async (c) => {
     description: r.description ? JSON.parse(r.description) : [],
     language: r.language,
     provider: r.provider,
+    gender: describeVoiceGender(inferVoiceGender({
+      id: r.voiceId,
+      name: r.voiceName,
+      description: r.description ? JSON.parse(r.description) : [],
+      language: r.language,
+      provider: r.provider,
+    })),
   }))
 
   return success(c, parsed)
@@ -31,47 +48,48 @@ app.get('/', async (c) => {
 
 // POST /ai-voices/sync
 app.post('/sync', async (c) => {
-  // 从数据库获取 minimax 的音频配置
+
   const rows = db.select().from(schema.aiServiceConfigs)
     .where(eq(schema.aiServiceConfigs.serviceType, 'audio'))
     .all()
     .filter(r => r.isActive && r.provider === 'minimax')
 
   if (rows.length === 0) {
-    return badRequest(c, 'No active minimax audio config found')
+    return badRequest(c, 'Nenhuma configuração de áudio MiniMax ativa foi encontrada')
   }
 
   const config = rows[0]
-  if (!config.apiKey) {
-    return badRequest(c, 'MiniMax API key not configured')
+  const apiKey = revealAIConfigApiKey(config.apiKey)
+  if (!apiKey) {
+    return badRequest(c, 'A API key do MiniMax não está configurada')
   }
 
-  // 调用 MiniMax get_voice API
+
   const resp = await fetch(joinProviderUrl(config.baseUrl, '/v1', '/get_voice'), {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${config.apiKey}`,
+      'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ voice_type: 'all' }),
   })
 
   if (!resp.ok) {
-    return badRequest(c, `MiniMax API error: ${resp.status}`)
+    return badRequest(c, `Erro da API MiniMax: ${resp.status}`)
   }
 
   const result = await resp.json() as any
   if (result.base_resp?.status_code !== 0) {
-    return badRequest(c, result.base_resp?.status_msg || 'Failed to fetch voices')
+    return badRequest(c, result.base_resp?.status_msg || 'Falha ao buscar vozes')
   }
 
   const voices = (result.system_voice || []).filter((v: any) => shouldKeepVoice(v))
   const ts = now()
 
-  // 先清空旧数据
+
   db.delete(schema.aiVoices).where(eq(schema.aiVoices.provider, 'minimax')).run()
 
-  // 批量插入新数据
+
   const insertRows = voices.map((v: any) => ({
     voiceId: v.voice_id,
     voiceName: v.voice_name,
@@ -85,37 +103,35 @@ app.post('/sync', async (c) => {
     db.insert(schema.aiVoices).values(insertRows).run()
   }
 
-  return success(c, { count: insertRows.length, message: `Synced ${insertRows.length} voices` })
+  return success(c, { count: insertRows.length, message: `${insertRows.length} vozes sincronizadas` })
 })
 
-/**
- * 从 voice_id 或 voice_name 推断语言
- */
+
 function extractLanguage(voiceId: string, voiceName: string): string {
   const text = `${voiceId} ${voiceName}`.toLowerCase()
-  if (text.includes('cantonese') || text.includes('粤')) return '粤语'
-  if (text.includes('english') || text.includes('aussie')) return '英语'
-  if (text.includes('japanese') || text.includes('日语')) return '日语'
-  if (text.includes('korean') || text.includes('韩')) return '韩语'
-  if (text.includes('spanish')) return '西班牙语'
-  if (text.includes('portuguese')) return '葡萄牙语'
-  if (text.includes('french')) return '法语'
-  if (text.includes('indonesian')) return '印尼语'
-  if (text.includes('german')) return '德语'
-  if (text.includes('russian')) return '俄语'
-  if (text.includes('italian')) return '意大利语'
-  if (text.includes('arabic')) return '阿拉伯语'
-  if (text.includes('turkish')) return '土耳其语'
-  if (text.includes('ukrainian')) return '乌克兰语'
-  if (text.includes('dutch')) return '荷兰语'
-  if (text.includes('vietnamese')) return '越南语'
-  if (text.includes('chinese') || text.includes('mandarin') || text.includes('中文')) return '中文'
-  return '其他'
+  if (text.includes('cantonese') || text.includes('Cantonês')) return 'Cantonês'
+  if (text.includes('english') || text.includes('aussie')) return 'Inglês'
+  if (text.includes('japanese') || text.includes('Japonês')) return 'Japonês'
+  if (text.includes('korean') || text.includes('Coreano')) return 'Coreano'
+  if (text.includes('spanish')) return 'Espanhol'
+  if (text.includes('portuguese')) return 'Português'
+  if (text.includes('french')) return 'Francês'
+  if (text.includes('indonesian')) return 'Indonésio'
+  if (text.includes('german')) return 'Alemão'
+  if (text.includes('russian')) return 'Russo'
+  if (text.includes('italian')) return 'Italiano'
+  if (text.includes('arabic')) return 'Árabe'
+  if (text.includes('turkish')) return 'Turco'
+  if (text.includes('ukrainian')) return 'Ucraniano'
+  if (text.includes('dutch')) return 'Holandês'
+  if (text.includes('vietnamese')) return 'Vietnamita'
+  if (text.includes('chinese') || text.includes('mandarin') || text.includes('Chinês')) return 'Chinês'
+  return 'Outros'
 }
 
 function shouldKeepVoice(voice: { voice_id: string, voice_name: string }) {
   const language = extractLanguage(voice.voice_id, voice.voice_name)
-  if (language !== '中文' && language !== '粤语') return false
+  if (language !== 'Chinês' && language !== 'Cantonês') return false
 
   const text = `${voice.voice_id} ${voice.voice_name}`.toLowerCase()
 

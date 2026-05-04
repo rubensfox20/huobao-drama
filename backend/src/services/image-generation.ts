@@ -1,43 +1,130 @@
-import { db, schema } from '../db/index.js'
 import { eq } from 'drizzle-orm'
+import { db, schema } from '../db/index.js'
 import { getActiveConfig, getConfigById } from './ai.js'
 import { now } from '../utils/response.js'
-import { downloadFile, readImageAsCompressedDataUrl, saveBase64Image } from '../utils/storage.js'
+import { downloadFile, readImageAsCompressedDataUrl, saveBase64Image, saveUploadedFile } from '../utils/storage.js'
 import { getImageAdapter } from './adapters/registry'
 import type { AIConfig } from './adapters/types'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWarn, redactUrl } from '../utils/task-logger.js'
+import { sanitizeVisualPrompt } from './storyboard-prompts.js'
+import { buildAssetGenerationCacheKey, findAssetGenerationCacheByKey, touchAssetGenerationCache, upsertAssetGenerationCache } from './asset-generation-cache.js'
+import { completeWorkflowJob, createWorkflowJob, failWorkflowJob, startWorkflowJob } from './workflow-jobs.js'
+import { runProviderOperation } from './provider-execution.js'
 
 interface GenerateImageParams {
   storyboardId?: number
   dramaId?: number
+  episodeId?: number
   sceneId?: number
   characterId?: number
   prompt: string
   model?: string
   size?: string
+  seed?: number
   referenceImages?: string[]
   frameType?: string
   configId?: number
+  workflowJobId?: number
 }
 
-export async function generateImage(params: GenerateImageParams): Promise<number> {
+export async function generateImage(params: GenerateImageParams): Promise<{ id: number; workflowJobId: number; cacheHit: boolean }> {
   const ts = now()
+  const prompt = sanitizeVisualPrompt(params.prompt)
+  const resolvedEpisodeId = params.episodeId
+    || (params.storyboardId
+      ? db.select({ episodeId: schema.storyboards.episodeId }).from(schema.storyboards).where(eq(schema.storyboards.id, params.storyboardId)).all()[0]?.episodeId
+      : undefined)
+    || (params.sceneId
+      ? db.select({ episodeId: schema.scenes.episodeId }).from(schema.scenes).where(eq(schema.scenes.id, params.sceneId)).all()[0]?.episodeId
+      : undefined)
   const config = params.configId
     ? getConfigById(params.configId)
     : getActiveConfig('image')
   if (!config) throw new Error('No active image AI config')
+
+  const seedJob = params.workflowJobId
+    ? { id: params.workflowJobId }
+    : createWorkflowJob({
+      kind: 'image_generate',
+      relatedEntityType: params.characterId ? 'character' : params.sceneId ? 'scene' : params.storyboardId ? 'storyboard' : 'image_generation',
+      relatedEntityId: params.characterId || params.sceneId || params.storyboardId || null,
+      dramaId: params.dramaId ?? null,
+      episodeId: resolvedEpisodeId ?? null,
+      provider: config.provider,
+      model: params.model || config.model,
+      inputSummary: prompt.slice(0, 200),
+      metadata: {
+        storyboardId: params.storyboardId,
+        sceneId: params.sceneId,
+        characterId: params.characterId,
+        frameType: params.frameType,
+        seed: params.seed,
+      },
+    })
+  const workflowJobId = Number(seedJob?.id)
+  startWorkflowJob(workflowJobId, { provider: config.provider, model: params.model || config.model })
+
+  const cacheKey = buildAssetGenerationCacheKey({
+    assetType: 'image',
+    provider: config.provider || 'unknown',
+    model: params.model || config.model || '',
+    prompt,
+    inputs: {
+      storyboardId: params.storyboardId,
+      sceneId: params.sceneId,
+      characterId: params.characterId,
+      frameType: params.frameType,
+      referenceImages: params.referenceImages || [],
+      size: params.size || '1920x1080',
+      seed: params.seed ?? null,
+    },
+  })
+
+  const cacheHit = findAssetGenerationCacheByKey(cacheKey)
+  if (cacheHit && cacheHit.status === 'completed' && (cacheHit.localPath || cacheHit.imageUrl)) {
+    touchAssetGenerationCache(cacheHit.id)
+    const cachedInsert = db.insert(schema.imageGenerations).values({
+      storyboardId: params.storyboardId,
+      dramaId: params.dramaId,
+      sceneId: params.sceneId,
+      characterId: params.characterId,
+      prompt,
+      model: params.model || config.model,
+      provider: config.provider,
+      size: params.size || '1920x1080',
+      seed: params.seed ?? null,
+      frameType: params.frameType,
+      referenceImages: params.referenceImages ? JSON.stringify(params.referenceImages) : null,
+      imageUrl: cacheHit.imageUrl,
+      localPath: cacheHit.localPath,
+      workflowJobId,
+      status: 'completed',
+      createdAt: ts,
+      updatedAt: ts,
+      completedAt: ts,
+    }).run()
+    const cachedId = Number(cachedInsert.lastInsertRowid)
+    finalizeImageGeneration(cachedId, config.provider, cacheHit.localPath || '', cacheHit.imageUrl || '')
+    completeWorkflowJob(workflowJobId, {
+      outputSummary: `cache-hit:${cachedId}`,
+      metadata: { cacheHit: true, generationId: cachedId, cacheKey },
+    })
+    return { id: cachedId, workflowJobId, cacheHit: true }
+  }
 
   const res = db.insert(schema.imageGenerations).values({
     storyboardId: params.storyboardId,
     dramaId: params.dramaId,
     sceneId: params.sceneId,
     characterId: params.characterId,
-    prompt: params.prompt,
+    prompt,
     model: params.model || config.model,
     provider: config.provider,
     size: params.size || '1920x1080',
+    seed: params.seed ?? null,
     frameType: params.frameType,
     referenceImages: params.referenceImages ? JSON.stringify(params.referenceImages) : null,
+    workflowJobId,
     status: 'processing',
     createdAt: ts,
     updatedAt: ts,
@@ -52,9 +139,11 @@ export async function generateImage(params: GenerateImageParams): Promise<number
     characterId: params.characterId,
     frameType: params.frameType,
     model: params.model || config.model,
+    workflowJobId,
   })
   logTaskPayload('ImageTask', 'enqueue params', {
     id: lastId,
+    workflowJobId,
     config: {
       provider: config.provider,
       model: config.model,
@@ -62,14 +151,15 @@ export async function generateImage(params: GenerateImageParams): Promise<number
     },
     params,
   })
-  processImageGeneration(lastId, config).catch(err => {
+
+  processImageGeneration(lastId, config, workflowJobId, cacheKey).catch(err => {
     logTaskError('ImageTask', 'process', { id: lastId, error: err.message })
     console.error(`Image generation ${lastId} failed:`, err)
   })
-  return lastId
+  return { id: lastId, workflowJobId, cacheHit: false }
 }
 
-async function processImageGeneration(id: number, config: AIConfig) {
+async function processImageGeneration(id: number, config: AIConfig, workflowJobId: number, cacheKey: string) {
   const adapter = getImageAdapter(config.provider)
 
   try {
@@ -85,13 +175,13 @@ async function processImageGeneration(id: number, config: AIConfig) {
       frameType: record.frameType,
     })
 
-    // 使用 Adapter 构建请求
     const resolvedReferenceImages = await normalizeReferenceImages(record.referenceImages)
-    const { url, method, headers, body } = adapter.buildGenerateRequest(config, {
+    const { url, method, headers, body } = await adapter.buildGenerateRequest(config, {
       id: record.id,
       model: record.model,
       prompt: record.prompt,
       size: record.size,
+      seed: record.seed,
       frameType: record.frameType,
       referenceImages: resolvedReferenceImages ? JSON.stringify(resolvedReferenceImages) : null,
     })
@@ -110,14 +200,33 @@ async function processImageGeneration(id: number, config: AIConfig) {
       body,
     })
 
-    const resp = await fetch(url, {
+    const resp = await runProviderOperation({
+      workflowJobId,
+      serviceType: 'image',
+      provider: config.provider,
+      model: record.model,
+      operation: 'generate',
+      requestHash: cacheKey,
+      metadata: { generationId: id, url: redactUrl(url) },
+    }, async () => fetch(url, {
       method,
       headers,
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(600_000),
-    })
+    }))
 
     if (!resp.ok) throw new Error(`API error ${resp.status}: ${await resp.text()}`)
+    const contentType = String(resp.headers.get('content-type') || '').toLowerCase()
+
+    if (contentType.startsWith('image/') || contentType.includes('application/octet-stream')) {
+      const buffer = await resp.arrayBuffer()
+      logTaskProgress('ImageTask', 'sync-binary-complete', { id, provider: config.provider, contentType })
+      await handleImageCompleteBinary(id, config.provider, buffer, contentType || 'image/png')
+      persistImageCache(id, cacheKey)
+      completeWorkflowJob(workflowJobId, { outputSummary: `image_generation:${id}`, metadata: { cacheHit: false } })
+      return
+    }
+
     const result = await resp.json() as any
     logTaskPayload('ImageTask', 'response payload', {
       id,
@@ -129,35 +238,37 @@ async function processImageGeneration(id: number, config: AIConfig) {
 
     if (!isAsync && imageUrl) {
       logTaskProgress('ImageTask', 'sync-complete', { id, imageUrl })
-      // 同步模式：直接下载图片
       await handleImageComplete(id, config.provider, imageUrl)
+      persistImageCache(id, cacheKey)
+      completeWorkflowJob(workflowJobId, { outputSummary: `image_generation:${id}`, metadata: { cacheHit: false } })
       return
     }
 
     if (!isAsync && !imageUrl) {
-      // 同步模式但无 URL（Gemini 等返回 base64）
       const b64 = adapter.extractImageBase64(result)
       if (b64) {
         logTaskProgress('ImageTask', 'sync-base64-complete', { id, mimeType: b64.mimeType })
         await handleImageCompleteBase64(id, config.provider, b64.data, b64.mimeType)
+        persistImageCache(id, cacheKey)
+        completeWorkflowJob(workflowJobId, { outputSummary: `image_generation:${id}`, metadata: { cacheHit: false } })
         return
       }
       throw new Error('No image URL or base64 data in response')
     }
 
-    // 异步模式：更新 taskId，开始轮询
     db.update(schema.imageGenerations)
       .set({ taskId, status: 'processing', updatedAt: now() })
       .where(eq(schema.imageGenerations.id, id))
       .run()
     logTaskProgress('ImageTask', 'poll-start', { id, taskId, provider: config.provider })
-    pollImageTask(id, config, taskId!)
+    pollImageTask(id, config, taskId!, workflowJobId, cacheKey)
   } catch (err: any) {
     logTaskError('ImageTask', 'process', { id, provider: config.provider, error: err.message })
     db.update(schema.imageGenerations)
       .set({ status: 'failed', errorMsg: err.message, updatedAt: now() })
       .where(eq(schema.imageGenerations.id, id))
       .run()
+    failWorkflowJob(workflowJobId, err.message, { metadata: { generationId: id } })
   }
 }
 
@@ -199,7 +310,7 @@ async function normalizeReferenceImages(raw: string | null | undefined): Promise
   return normalized.filter((item): item is string => !!item).slice(0, 6)
 }
 
-async function pollImageTask(id: number, config: AIConfig, taskId: string) {
+async function pollImageTask(id: number, config: AIConfig, taskId: string, workflowJobId: number, cacheKey: string) {
   const adapter = getImageAdapter(config.provider)
   const startedAt = Date.now()
   const maxDurationMs = 600_000
@@ -211,6 +322,7 @@ async function pollImageTask(id: number, config: AIConfig, taskId: string) {
         .set({ status: 'failed', errorMsg: 'Timeout: Polling exceeded 10 minutes', updatedAt: now() })
         .where(eq(schema.imageGenerations.id, id))
         .run()
+      failWorkflowJob(workflowJobId, 'Timeout: Polling exceeded 10 minutes', { metadata: { generationId: id, taskId } })
       return
     }
     await new Promise(r => setTimeout(r, 5000))
@@ -220,6 +332,7 @@ async function pollImageTask(id: number, config: AIConfig, taskId: string) {
         .set({ status: 'failed', errorMsg: 'Timeout: Polling exceeded 10 minutes', updatedAt: now() })
         .where(eq(schema.imageGenerations.id, id))
         .run()
+      failWorkflowJob(workflowJobId, 'Timeout: Polling exceeded 10 minutes', { metadata: { generationId: id, taskId } })
       return
     }
     try {
@@ -246,14 +359,17 @@ async function pollImageTask(id: number, config: AIConfig, taskId: string) {
       if (pollResp.status === 'completed' && pollResp.imageUrl) {
         logTaskSuccess('ImageTask', 'poll-complete', { id, taskId, imageUrl: pollResp.imageUrl })
         await handleImageComplete(id, config.provider, pollResp.imageUrl)
+        persistImageCache(id, cacheKey)
+        completeWorkflowJob(workflowJobId, { outputSummary: `image_generation:${id}`, metadata: { cacheHit: false } })
         return
       }
       if (pollResp.status === 'completed' && adapter.provider === 'gemini') {
-        // Gemini 可能返回 base64
         const b64 = adapter.extractImageBase64(result)
         if (b64) {
           logTaskSuccess('ImageTask', 'poll-base64-complete', { id, taskId, mimeType: b64.mimeType })
           await handleImageCompleteBase64(id, config.provider, b64.data, b64.mimeType)
+          persistImageCache(id, cacheKey)
+          completeWorkflowJob(workflowJobId, { outputSummary: `image_generation:${id}`, metadata: { cacheHit: false } })
           return
         }
       }
@@ -268,6 +384,7 @@ async function pollImageTask(id: number, config: AIConfig, taskId: string) {
           .set({ status: 'failed', errorMsg: `Timeout: ${err.message}`, updatedAt: now() })
           .where(eq(schema.imageGenerations.id, id))
           .run()
+        failWorkflowJob(workflowJobId, `Timeout: ${err.message}`, { metadata: { generationId: id, taskId } })
         return
       }
       logTaskWarn('ImageTask', 'poll-retry', { id, taskId, attempt: i + 1, error: err.message })
@@ -277,16 +394,32 @@ async function pollImageTask(id: number, config: AIConfig, taskId: string) {
 
 async function handleImageComplete(id: number, provider: string, imageUrl: string) {
   const localPath = await downloadFile(imageUrl, 'images')
+  finalizeImageGeneration(id, provider, localPath, imageUrl)
+  logTaskSuccess('ImageTask', 'downloaded', { id, provider, localPath })
+}
+
+async function handleImageCompleteBinary(id: number, provider: string, buffer: ArrayBuffer, mimeType: string) {
+  const extension = mimeTypeToExtension(mimeType)
+  const localPath = await saveUploadedFile(buffer, 'images', `generated.${extension}`)
+  finalizeImageGeneration(id, provider, localPath, '')
+  logTaskSuccess('ImageTask', 'saved-binary', { id, provider, mimeType, localPath })
+}
+
+async function handleImageCompleteBase64(id: number, provider: string, base64Data: string, mimeType: string) {
+  const localPath = await saveBase64Image(base64Data, mimeType, 'images')
+  finalizeImageGeneration(id, provider, localPath, '')
+  logTaskSuccess('ImageTask', 'saved-base64', { id, provider, mimeType, localPath })
+}
+
+function finalizeImageGeneration(id: number, provider: string, localPath: string, imageUrl: string) {
   const rows = db.select().from(schema.imageGenerations).where(eq(schema.imageGenerations.id, id)).all()
   const record = rows[0]
 
   db.update(schema.imageGenerations)
-    .set({ imageUrl, localPath, status: 'completed', updatedAt: now() })
+    .set({ imageUrl, localPath, status: 'completed', updatedAt: now(), completedAt: now() })
     .where(eq(schema.imageGenerations.id, id))
     .run()
-  logTaskSuccess('ImageTask', 'downloaded', { id, provider, localPath })
 
-  // 更新关联表
   if (record?.storyboardId) {
     const sbUpdate: Record<string, any> = { updatedAt: now() }
     if (record.frameType === 'first_frame') sbUpdate.firstFrameImage = localPath
@@ -302,29 +435,34 @@ async function handleImageComplete(id: number, provider: string, imageUrl: strin
   }
 }
 
-async function handleImageCompleteBase64(id: number, provider: string, base64Data: string, mimeType: string) {
-  const localPath = await saveBase64Image(base64Data, mimeType, 'images')
-  const rows = db.select().from(schema.imageGenerations).where(eq(schema.imageGenerations.id, id)).all()
-  const record = rows[0]
+function persistImageCache(id: number, cacheKey: string) {
+  const record = db.select().from(schema.imageGenerations).where(eq(schema.imageGenerations.id, id)).all()[0]
+  if (!record || record.status !== 'completed') return
+  upsertAssetGenerationCache({
+    assetType: 'image',
+    cacheKey,
+    provider: record.provider || 'unknown',
+    model: record.model,
+    prompt: record.prompt || '',
+    referenceMode: record.frameType || '',
+    sourceImageGenerationId: record.id,
+    imageUrl: record.imageUrl,
+    localPath: record.localPath,
+    metadata: {
+      storyboardId: record.storyboardId,
+      sceneId: record.sceneId,
+      characterId: record.characterId,
+      frameType: record.frameType,
+      seed: record.seed,
+    },
+  })
+}
 
-  db.update(schema.imageGenerations)
-    .set({ localPath, status: 'completed', updatedAt: now() })
-    .where(eq(schema.imageGenerations.id, id))
-    .run()
-  logTaskSuccess('ImageTask', 'saved-base64', { id, provider, mimeType, localPath })
-
-  // 更新关联表
-  if (record?.storyboardId) {
-    const sbUpdate: Record<string, any> = { updatedAt: now() }
-    if (record.frameType === 'first_frame') sbUpdate.firstFrameImage = localPath
-    else if (record.frameType === 'last_frame') sbUpdate.lastFrameImage = localPath
-    else sbUpdate.composedImage = localPath
-    db.update(schema.storyboards).set(sbUpdate).where(eq(schema.storyboards.id, record.storyboardId)).run()
-  }
-  if (record?.characterId) {
-    db.update(schema.characters).set({ imageUrl: localPath, updatedAt: now() }).where(eq(schema.characters.id, record.characterId)).run()
-  }
-  if (record?.sceneId) {
-    db.update(schema.scenes).set({ imageUrl: localPath, status: 'completed', updatedAt: now() }).where(eq(schema.scenes.id, record.sceneId)).run()
-  }
+function mimeTypeToExtension(mimeType: string) {
+  const normalized = String(mimeType || '').toLowerCase()
+  if (normalized.includes('png')) return 'png'
+  if (normalized.includes('webp')) return 'webp'
+  if (normalized.includes('jpeg')) return 'jpeg'
+  if (normalized.includes('jpg')) return 'jpg'
+  return 'png'
 }

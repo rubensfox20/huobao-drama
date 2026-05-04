@@ -1,7 +1,4 @@
-/**
- * MiniMax 图片生成 Adapter
- * API 风格与 OpenAI 兼容，零改动
- */
+
 import type {
   ImageProviderAdapter,
   ProviderRequest,
@@ -23,17 +20,17 @@ export class MiniMaxImageAdapter implements ImageProviderAdapter {
       n: 1,
     }
 
-    // MiniMax 支持 reference_images（参考图）
+
     if (record.referenceImages) {
       try {
         const refs = JSON.parse(record.referenceImages)
         if (refs.length > 0) {
-          body.image = refs // 支持多张参考图
+          body.image = refs
         }
       } catch {}
     }
 
-    // aspect_ratio 参数（MiniMax 支持）
+
     if (record.size) {
       const [w, h] = record.size.split('x')
       if (w && h) {
@@ -54,11 +51,11 @@ export class MiniMaxImageAdapter implements ImageProviderAdapter {
   }
 
   parseGenerateResponse(result: any): ImageGenResponse {
-    // 异步模式：返回 task_id
+
     if (result.task_id || result.id) {
       return { isAsync: true, taskId: result.task_id || result.id }
     }
-    // 同步模式：直接返回图片 URL
+
     const imageUrl = result.data?.[0]?.url || result.url
     if (imageUrl) {
       return { isAsync: false, imageUrl }
@@ -93,7 +90,7 @@ export class MiniMaxImageAdapter implements ImageProviderAdapter {
   }
 
   extractImageBase64(result: any): { data: string; mimeType: string } | null {
-    // MiniMax 通常返回 URL，不返回 base64
+
     return null
   }
 }

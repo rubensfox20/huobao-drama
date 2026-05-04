@@ -5,11 +5,20 @@ import { success, created, now, badRequest } from '../utils/response.js'
 import { toSnakeCase } from '../utils/transform.js'
 import { generateTTS } from '../services/tts-generation.js'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
+import { getAudioConfigById } from '../services/ai.js'
+import { sanitizeSupportPrompt, sanitizeVisualPrompt } from '../services/storyboard-prompts.js'
+import { createWorkflowJob, startWorkflowJob, completeWorkflowJob, failWorkflowJob } from '../services/workflow-jobs.js'
+import { validateStoryboardForTTS, validateVisualPrompt } from '../services/pipeline-validation.js'
+import { resolveStoryboardVoiceSelection } from '../services/storyboard-voice.js'
+import { getStoryboardSpokenDialogue } from '../services/storyboard-speech.js'
+import { normalizeStoryboardContinuityMode, normalizeStoryboardReviewStatus } from '../services/storyboard-review.js'
+import { requireAdminForWriteMethods } from '../middleware/admin-auth.js'
 
 const app = new Hono()
+app.use('*', requireAdminForWriteMethods())
 
-const IGNORE_TTS_SPEAKERS = /^(环境音|环境声|音效|效果音|sfx|sound ?effect|bgm|背景音|背景音乐|ambient)$/i
-const IGNORE_TTS_TEXT = /^(无|无对白|无台词|无旁白|无需配音|无需对白|none|null|n\/a|na|环境音|环境声|音效|效果音|纯音效|纯环境音|只有环境音|仅环境音|背景音|背景音乐|bgm|sfx|ambient)$/i
+const IGNORE_TTS_SPEAKERS = /^(sfx|sound ?effect|bgm|ambient)$/i
+const IGNORE_TTS_TEXT = /^(none|null|n\/a|na|bgm|sfx|ambient)$/i
 
 function parseDialogueForTTS(dialogue?: string | null) {
   const raw = dialogue?.trim() || ''
@@ -56,12 +65,12 @@ function validateStoryboardBindings(episodeId: number, sceneId: number | null | 
   )
 
   if (sceneId != null && !episodeSceneIds.has(sceneId)) {
-    throw new Error('scene_id 必须来自当前集已关联场景')
+    throw new Error('scene_id deve pertencer a uma cena vinculada ao episódio atual')
   }
 
   const invalidCharacterIds = (characterIds || []).filter(id => !episodeCharacterIds.has(id))
   if (invalidCharacterIds.length) {
-    throw new Error('character_ids 必须来自当前集已关联角色')
+    throw new Error('character_ids deve pertencer a personagens vinculados ao episódio atual')
   }
 }
 
@@ -86,6 +95,7 @@ app.post('/', async (c) => {
     dialogue: body.dialogue,
     sceneId: body.scene_id,
     duration: body.duration || 10,
+    motionPresetOverride: body.motion_preset_override || null,
     createdAt: ts,
     updatedAt: ts,
   }).run()
@@ -108,7 +118,7 @@ app.put('/:id', async (c) => {
   const id = Number(c.req.param('id'))
   const body = await c.req.json()
   const [storyboard] = db.select().from(schema.storyboards).where(eq(schema.storyboards.id, id)).all()
-  if (!storyboard) return badRequest(c, '镜头不存在')
+  if (!storyboard) return badRequest(c, 'Tomada não encontrada')
   logTaskStart('StoryboardAPI', 'update', {
     storyboardId: id,
     episodeId: storyboard.episodeId,
@@ -122,7 +132,14 @@ app.put('/:id', async (c) => {
     dialogue: 'dialogue', duration: 'duration', video_prompt: 'videoPrompt',
     image_prompt: 'imagePrompt', scene_id: 'sceneId', location: 'location',
     time: 'time', atmosphere: 'atmosphere', result: 'result',
+    review_status: 'reviewStatus', review_notes: 'reviewNotes',
+    continuity_mode: 'continuityMode', continuity_source_storyboard_id: 'continuitySourceStoryboardId',
+    motion_preset_override: 'motionPresetOverride',
     bgm_prompt: 'bgmPrompt', sound_effect: 'soundEffect',
+    first_frame_image: 'firstFrameImage', last_frame_image: 'lastFrameImage',
+    composed_image: 'composedImage', video_url: 'videoUrl',
+    composed_video_url: 'composedVideoUrl', tts_audio_url: 'ttsAudioUrl',
+    subtitle_url: 'subtitleUrl', status: 'status',
   }
 
   const updates: Record<string, any> = { updatedAt: now() }
@@ -130,9 +147,34 @@ app.put('/:id', async (c) => {
     if (snakeKey in body) updates[camelKey] = body[snakeKey]
   }
 
+  if ('image_prompt' in body) updates.imagePrompt = sanitizeVisualPrompt(body.image_prompt)
+  if ('video_prompt' in body) updates.videoPrompt = sanitizeVisualPrompt(body.video_prompt)
+  if ('bgm_prompt' in body) updates.bgmPrompt = sanitizeSupportPrompt(body.bgm_prompt)
+  if ('sound_effect' in body) updates.soundEffect = sanitizeSupportPrompt(body.sound_effect)
+  if ('review_status' in body) updates.reviewStatus = normalizeStoryboardReviewStatus(body.review_status)
+  if ('review_notes' in body) updates.reviewNotes = String(body.review_notes || '').trim() || null
+  if ('continuity_mode' in body) updates.continuityMode = normalizeStoryboardContinuityMode(body.continuity_mode)
+  if ('continuity_source_storyboard_id' in body) {
+    const sourceId = Number(body.continuity_source_storyboard_id || 0)
+    if (sourceId > 0) {
+      const [sourceStoryboard] = db.select().from(schema.storyboards).where(eq(schema.storyboards.id, sourceId)).all()
+      if (!sourceStoryboard || Number(sourceStoryboard.episodeId) !== Number(storyboard.episodeId)) {
+        return badRequest(c, 'continuity_source_storyboard_id deve pertencer ao episodio atual')
+      }
+      updates.continuitySourceStoryboardId = sourceId
+    } else {
+      updates.continuitySourceStoryboardId = null
+    }
+    updates.generationSpec = null
+  }
+
   if ('dialogue' in body) {
     updates.ttsAudioUrl = null
     updates.subtitleUrl = null
+  }
+
+  if ('continuity_mode' in body || 'first_frame_image' in body || 'last_frame_image' in body || 'composed_image' in body) {
+    updates.generationSpec = null
   }
 
   validateStoryboardBindings(
@@ -155,9 +197,9 @@ app.put('/:id', async (c) => {
 app.post('/:id/generate-tts', async (c) => {
   const id = Number(c.req.param('id'))
   const [sb] = db.select().from(schema.storyboards).where(eq(schema.storyboards.id, id)).all()
-  if (!sb) return badRequest(c, '镜头不存在')
-  const parsedDialogue = parseDialogueForTTS(sb.dialogue)
-  if (parsedDialogue.ignorable) return badRequest(c, '该镜头没有可生成的对白或旁白')
+  if (!sb) return badRequest(c, 'Take não existe')
+  const parsedDialogue = parseDialogueForTTS(getStoryboardSpokenDialogue(sb))
+  if (parsedDialogue.ignorable) return badRequest(c, 'Esta tomada não tem diálogos ou narração para gerar')
   logTaskStart('StoryboardAPI', 'generate-tts', {
     storyboardId: id,
     episodeId: sb.episodeId,
@@ -169,40 +211,60 @@ app.post('/:id/generate-tts', async (c) => {
     dialogue: sb.dialogue,
   })
 
-  let voiceId = 'alloy'
+  const [ep] = db.select().from(schema.episodes).where(eq(schema.episodes.id, sb.episodeId)).all()
+  const audioProvider = getAudioConfigById(ep?.audioConfigId ?? null)?.provider || null
   const speaker = parsedDialogue.speaker
-
-  if (speaker) {
-    if (!/^(旁白|画外音|narrator)$/i.test(speaker)) {
-      const [ep] = db.select().from(schema.episodes).where(eq(schema.episodes.id, sb.episodeId)).all()
-      if (ep) {
-        const chars = db.select().from(schema.characters).where(eq(schema.characters.dramaId, ep.dramaId)).all()
-        const found = chars.find((char) => char.name === speaker)
-        if (found?.voiceStyle) voiceId = found.voiceStyle
-      }
-    }
-  }
+  const linkedCharacterIds = getStoryboardCharacterIds(id)
+  const chars = ep
+    ? db.select().from(schema.characters).where(eq(schema.characters.dramaId, ep.dramaId)).all()
+    : []
+  const linkedCharacters = chars.filter((char) => linkedCharacterIds.includes(char.id))
+  const { voiceId, source: voiceSource } = resolveStoryboardVoiceSelection({
+    provider: audioProvider,
+    speaker,
+    linkedCharacters,
+    allCharacters: chars,
+  })
 
   const pureDialogue = parsedDialogue.pureText
-  if (!pureDialogue) return badRequest(c, '未提取到可合成的文本')
+  if (!pureDialogue) return badRequest(c, 'Nenhum texto foi extraído para síntese')
+  const workflowJob = createWorkflowJob({
+    kind: 'tts_generate',
+    relatedEntityType: 'storyboard',
+    relatedEntityId: id,
+    dramaId: ep?.dramaId ?? null,
+    episodeId: sb.episodeId,
+    inputSummary: pureDialogue.slice(0, 120),
+    metadata: { voiceId, speaker, voiceSource },
+  })
 
-  const [ep] = db.select().from(schema.episodes).where(eq(schema.episodes.id, sb.episodeId)).all()
   try {
-    const audioPath = await generateTTS({ text: pureDialogue, voice: voiceId, configId: ep?.audioConfigId || null })
+    startWorkflowJob(Number(workflowJob?.id), { provider: audioProvider || undefined, model: getAudioConfigById(ep?.audioConfigId || null)?.model || undefined })
+    const audioPath = await generateTTS({ text: pureDialogue, voice: voiceId, configId: ep?.audioConfigId || null, workflowJobId: Number(workflowJob?.id) })
   db.update(schema.storyboards)
     .set({ ttsAudioUrl: audioPath, updatedAt: now() })
     .where(eq(schema.storyboards.id, id))
     .run()
+    completeWorkflowJob(Number(workflowJob?.id), { outputSummary: audioPath, metadata: { storyboardId: id, voiceId } })
 
     logTaskSuccess('StoryboardAPI', 'generate-tts', {
       storyboardId: id,
       voiceId,
+      voiceSource,
       path: audioPath,
       textLength: pureDialogue.length,
     })
-    return success(c, { tts_audio_url: audioPath, voice_id: voiceId, text: pureDialogue })
+    return success(c, {
+      tts_audio_url: audioPath,
+      voice_id: voiceId,
+      text: pureDialogue,
+      workflow_job_id: Number(workflowJob?.id),
+      status: 'completed',
+      validation: validateStoryboardForTTS(id),
+    })
   } catch (err: any) {
     logTaskError('StoryboardAPI', 'generate-tts', { storyboardId: id, voiceId, error: err.message })
+    failWorkflowJob(Number(workflowJob?.id), err.message, { metadata: { storyboardId: id, voiceId } })
     return badRequest(c, err.message)
   }
 })

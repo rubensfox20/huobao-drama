@@ -1,7 +1,4 @@
-/**
- * 阿里云百炼（万相）图片生成 Adapter
- * API 文档: https://help.aliyun.com/zh/model-studio/text-to-image-v2-api-reference
- */
+
 import type { ImageProviderAdapter, ImageGenerationRecord } from './types'
 import { joinProviderUrl } from './url'
 
@@ -16,7 +13,7 @@ export class AliImageAdapter implements ImageProviderAdapter {
   } {
     const baseUrl = config.baseUrl || 'https://dashscope.aliyuncs.com'
 
-    // wan2.6 使用新版异步接口
+
     const url = joinProviderUrl(baseUrl, '/api/v1', '/services/aigc/image-generation/generation')
 
     const headers: Record<string, string> = {
@@ -25,7 +22,7 @@ export class AliImageAdapter implements ImageProviderAdapter {
       'X-DashScope-Async': 'enable',
     }
 
-    // 解析 size 参数（如 "1920x1080" -> "1696*960"）
+
     const size = this.normalizeSize(record.size || '1280*1280')
 
     const body: any = {
@@ -44,7 +41,11 @@ export class AliImageAdapter implements ImageProviderAdapter {
         negative_prompt: '',
         prompt_extend: true,
         watermark: false,
-        seed: record.referenceImages ? undefined : Math.floor(Math.random() * 2147483647),
+        seed: typeof record.seed === 'number'
+          ? record.seed
+          : record.referenceImages
+            ? undefined
+            : Math.floor(Math.random() * 2147483647),
       },
     }
 
@@ -56,12 +57,12 @@ export class AliImageAdapter implements ImageProviderAdapter {
     taskId?: string
     imageUrl?: string
   } {
-    // PENDING 表示异步任务已创建
+
     if (result.output?.task_status === 'PENDING' && result.output?.task_id) {
       return { isAsync: true, taskId: result.output.task_id }
     }
 
-    // 同步模式：直接返回图片 URL
+
     if (result.output?.choices?.[0]?.message?.content?.[0]?.image) {
       return {
         isAsync: false,
@@ -69,7 +70,7 @@ export class AliImageAdapter implements ImageProviderAdapter {
       }
     }
 
-    // 未知响应格式
+
     throw new Error(`Unexpected Ali image response: ${JSON.stringify(result).slice(0, 200)}`)
   }
 
@@ -115,7 +116,7 @@ export class AliImageAdapter implements ImageProviderAdapter {
   }
 
   extractImageBase64(result: any): { data: string; mimeType: string } | null {
-    // Ali 目前不支持直接返回 base64
+
     return null
   }
 
@@ -123,14 +124,12 @@ export class AliImageAdapter implements ImageProviderAdapter {
     return result.output?.choices?.[0]?.message?.content?.[0]?.image || null
   }
 
-  /**
-   * 将 "1920x1080" 转换为阿里需要的 "1696*960" 格式
-   */
+
   private normalizeSize(size: string): string {
-    // 默认比例 16:9
+
     const [w, h] = size.split('x').map(Number)
     if (w && h) {
-      // 映射到 Ali 支持的比例
+
       const aspect = w / h
       if (aspect > 1.7) return '1696*960' // 16:9
       if (aspect < 0.8) return '960*1696' // 9:16

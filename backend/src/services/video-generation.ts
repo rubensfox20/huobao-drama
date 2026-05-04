@@ -1,15 +1,21 @@
-import { db, schema } from '../db/index.js'
 import { eq } from 'drizzle-orm'
+import { db, schema } from '../db/index.js'
 import { getActiveConfig, getConfigById } from './ai.js'
 import { now } from '../utils/response.js'
-import { downloadFile, readImageAsCompressedDataUrl } from '../utils/storage.js'
+import { downloadFile, readImageAsCompressedDataUrl, saveUploadedFile } from '../utils/storage.js'
 import { getVideoAdapter } from './adapters/registry'
 import type { AIConfig } from './adapters/types'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess, logTaskWarn, redactUrl } from '../utils/task-logger.js'
+import { sanitizeVisualPrompt } from './storyboard-prompts.js'
+import { buildAssetGenerationCacheKey, findAssetGenerationCacheByKey, touchAssetGenerationCache, upsertAssetGenerationCache } from './asset-generation-cache.js'
+import { completeWorkflowJob, createWorkflowJob, failWorkflowJob, startWorkflowJob } from './workflow-jobs.js'
+import { runProviderOperation } from './provider-execution.js'
+import { ensureStoryboardVideoFrames } from './media-frames.js'
 
 interface GenerateVideoParams {
   storyboardId?: number
   dramaId?: number
+  episodeId?: number
   prompt: string
   model?: string
   referenceMode?: string
@@ -20,19 +26,100 @@ interface GenerateVideoParams {
   duration?: number
   aspectRatio?: string
   configId?: number
+  workflowJobId?: number
 }
 
-export async function generateVideo(params: GenerateVideoParams): Promise<number> {
+export async function generateVideo(params: GenerateVideoParams): Promise<{ id: number; workflowJobId: number; cacheHit: boolean }> {
   const ts = now()
+  const sanitizedPrompt = sanitizeVisualPrompt(params.prompt)
+  const resolvedEpisodeId = params.episodeId
+    || (params.storyboardId
+      ? db.select({ episodeId: schema.storyboards.episodeId }).from(schema.storyboards).where(eq(schema.storyboards.id, params.storyboardId)).all()[0]?.episodeId
+      : undefined)
   const config = params.configId
     ? getConfigById(params.configId)
     : getActiveConfig('video')
   if (!config) throw new Error('No active video AI config')
 
+  const workflowJob = params.workflowJobId
+    ? { id: params.workflowJobId }
+    : createWorkflowJob({
+      kind: 'video_generate',
+      relatedEntityType: params.storyboardId ? 'storyboard' : 'video_generation',
+      relatedEntityId: params.storyboardId || null,
+      dramaId: params.dramaId ?? null,
+      episodeId: resolvedEpisodeId ?? null,
+      provider: config.provider,
+      model: params.model || config.model,
+      inputSummary: sanitizedPrompt.slice(0, 200),
+      metadata: {
+        storyboardId: params.storyboardId,
+        referenceMode: params.referenceMode || 'none',
+        duration: params.duration || 5,
+      },
+    })
+  const workflowJobId = Number(workflowJob?.id)
+  startWorkflowJob(workflowJobId, { provider: config.provider, model: params.model || config.model })
+
+  const cacheKey = buildAssetGenerationCacheKey({
+    assetType: 'video',
+    provider: config.provider || 'unknown',
+    model: params.model || config.model || '',
+    prompt: sanitizedPrompt,
+    referenceMode: params.referenceMode || 'none',
+    inputs: {
+      storyboardId: params.storyboardId,
+      imageUrl: params.imageUrl,
+      firstFrameUrl: params.firstFrameUrl,
+      lastFrameUrl: params.lastFrameUrl,
+      referenceImageUrls: params.referenceImageUrls || [],
+      duration: params.duration || 5,
+      aspectRatio: params.aspectRatio || '16:9',
+    },
+  })
+  const cacheHit = findAssetGenerationCacheByKey(cacheKey)
+  if (cacheHit && cacheHit.status === 'completed' && (cacheHit.localPath || cacheHit.videoUrl)) {
+    touchAssetGenerationCache(cacheHit.id)
+    const cachedInsert = db.insert(schema.videoGenerations).values({
+      storyboardId: params.storyboardId,
+      dramaId: params.dramaId,
+      prompt: sanitizedPrompt,
+      model: params.model || config.model,
+      provider: config.provider,
+      referenceMode: params.referenceMode || 'none',
+      imageUrl: params.imageUrl,
+      firstFrameUrl: params.firstFrameUrl,
+      lastFrameUrl: params.lastFrameUrl,
+      referenceImageUrls: params.referenceImageUrls ? JSON.stringify(params.referenceImageUrls) : null,
+      duration: params.duration || 5,
+      aspectRatio: params.aspectRatio || '16:9',
+      videoUrl: cacheHit.videoUrl,
+      localPath: cacheHit.localPath,
+      workflowJobId,
+      status: 'completed',
+      createdAt: ts,
+      updatedAt: ts,
+      completedAt: ts,
+    }).run()
+    const cachedId = Number(cachedInsert.lastInsertRowid)
+    if (params.storyboardId) {
+      db.update(schema.storyboards).set({
+        videoUrl: cacheHit.localPath || cacheHit.videoUrl || null,
+        duration: params.duration || 5,
+        updatedAt: ts,
+      }).where(eq(schema.storyboards.id, params.storyboardId)).run()
+    }
+    completeWorkflowJob(workflowJobId, {
+      outputSummary: `cache-hit:${cachedId}`,
+      metadata: { cacheHit: true, generationId: cachedId, cacheKey },
+    })
+    return { id: cachedId, workflowJobId, cacheHit: true }
+  }
+
   const res = db.insert(schema.videoGenerations).values({
     storyboardId: params.storyboardId,
     dramaId: params.dramaId,
-    prompt: params.prompt,
+    prompt: sanitizedPrompt,
     model: params.model || config.model,
     provider: config.provider,
     referenceMode: params.referenceMode || 'none',
@@ -42,6 +129,7 @@ export async function generateVideo(params: GenerateVideoParams): Promise<number
     referenceImageUrls: params.referenceImageUrls ? JSON.stringify(params.referenceImageUrls) : null,
     duration: params.duration || 5,
     aspectRatio: params.aspectRatio || '16:9',
+    workflowJobId,
     status: 'processing',
     createdAt: ts,
     updatedAt: ts,
@@ -55,9 +143,11 @@ export async function generateVideo(params: GenerateVideoParams): Promise<number
     dramaId: params.dramaId,
     referenceMode: params.referenceMode || 'none',
     duration: params.duration || 5,
+    workflowJobId,
   })
   logTaskPayload('VideoTask', 'enqueue params', {
     id: lastId,
+    workflowJobId,
     config: {
       provider: config.provider,
       model: config.model,
@@ -65,14 +155,26 @@ export async function generateVideo(params: GenerateVideoParams): Promise<number
     },
     params,
   })
-  processVideoGeneration(lastId, config).catch(err => {
+
+  if (params.storyboardId && sanitizedPrompt !== String(params.prompt || '').trim()) {
+    const [storyboard] = db.select().from(schema.storyboards)
+      .where(eq(schema.storyboards.id, params.storyboardId)).all()
+    if (storyboard && String(storyboard.videoPrompt || '').trim() === String(params.prompt || '').trim()) {
+      db.update(schema.storyboards)
+        .set({ videoPrompt: sanitizedPrompt, updatedAt: now() })
+        .where(eq(schema.storyboards.id, params.storyboardId))
+        .run()
+    }
+  }
+
+  processVideoGeneration(lastId, config, workflowJobId, cacheKey).catch(err => {
     logTaskError('VideoTask', 'process', { id: lastId, error: err.message })
     console.error(`Video generation ${lastId} failed:`, err)
   })
-  return lastId
+  return { id: lastId, workflowJobId, cacheHit: false }
 }
 
-async function processVideoGeneration(id: number, config: AIConfig) {
+async function processVideoGeneration(id: number, config: AIConfig, workflowJobId: number, cacheKey: string) {
   const adapter = getVideoAdapter(config.provider)
 
   try {
@@ -90,9 +192,7 @@ async function processVideoGeneration(id: number, config: AIConfig) {
     const resolvedFirstFrameUrl = await normalizeVideoReferenceUrl(record.firstFrameUrl)
     const resolvedLastFrameUrl = await normalizeVideoReferenceUrl(record.lastFrameUrl)
     const resolvedReferenceImageUrls = await normalizeVideoReferenceUrls(record.referenceImageUrls)
-
-    // 使用 Adapter 构建请求
-    const { url, method, headers, body } = adapter.buildGenerateRequest(config, {
+    const requestRecord = {
       id: record.id,
       model: record.model,
       prompt: record.prompt,
@@ -103,7 +203,68 @@ async function processVideoGeneration(id: number, config: AIConfig) {
       referenceImageUrls: resolvedReferenceImageUrls ? JSON.stringify(resolvedReferenceImageUrls) : null,
       duration: record.duration,
       aspectRatio: record.aspectRatio,
-    })
+    }
+
+    if (adapter.executeGenerate) {
+      logTaskProgress('VideoTask', 'sdk-request', {
+        id,
+        provider: config.provider,
+        model: record.model,
+        referenceMode: record.referenceMode,
+      })
+      const execution = await runProviderOperation({
+        workflowJobId,
+        serviceType: 'video',
+        provider: config.provider,
+        model: record.model,
+        operation: 'generate',
+        requestHash: cacheKey,
+        metadata: { generationId: id, mode: 'sdk' },
+      }, async () => adapter.executeGenerate!(config, requestRecord))
+
+      if (execution.kind === 'binary' && execution.binary) {
+        logTaskProgress('VideoTask', 'sync-binary-complete', {
+          id,
+          provider: config.provider,
+          mimeType: execution.binary.mimeType,
+        })
+        await handleVideoCompleteBinary(
+          id,
+          execution.binary.data,
+          execution.binary.mimeType || 'video/mp4',
+          execution.binary.filename || 'generated.mp4',
+          record.duration,
+          record.storyboardId,
+        )
+        persistVideoCache(id, cacheKey)
+        completeWorkflowJob(workflowJobId, { outputSummary: `video_generation:${id}`, metadata: { cacheHit: false } })
+        return
+      }
+
+      const sdkResponse = execution.response
+      if (!sdkResponse) {
+        throw new Error('Provider did not return a binary payload or response metadata')
+      }
+
+      if (!sdkResponse.isAsync && sdkResponse.videoUrl) {
+        logTaskProgress('VideoTask', 'sync-complete', { id, videoUrl: sdkResponse.videoUrl })
+        await handleVideoComplete(id, sdkResponse.videoUrl, record.duration, record.storyboardId)
+        persistVideoCache(id, cacheKey)
+        completeWorkflowJob(workflowJobId, { outputSummary: `video_generation:${id}`, metadata: { cacheHit: false } })
+        return
+      }
+
+      db.update(schema.videoGenerations)
+        .set({ taskId: sdkResponse.taskId, status: 'processing', updatedAt: now() })
+        .where(eq(schema.videoGenerations.id, id))
+        .run()
+      logTaskProgress('VideoTask', 'poll-start', { id, taskId: sdkResponse.taskId, provider: config.provider })
+
+      pollVideoTask(id, config, sdkResponse.taskId!, record.storyboardId, workflowJobId, cacheKey)
+      return
+    }
+
+    const { url, method, headers, body } = await adapter.buildGenerateRequest(config, requestRecord)
     logTaskProgress('VideoTask', 'request', {
       id,
       provider: config.provider,
@@ -120,44 +281,62 @@ async function processVideoGeneration(id: number, config: AIConfig) {
       body,
     })
 
-    const resp = await fetch(url, {
+    const resp = await runProviderOperation({
+      workflowJobId,
+      serviceType: 'video',
+      provider: config.provider,
+      model: record.model,
+      operation: 'generate',
+      requestHash: cacheKey,
+      metadata: { generationId: id, url: redactUrl(url) },
+    }, async () => fetch(url, {
       method,
       headers,
       body: JSON.stringify(body),
-    })
+    }))
 
     if (!resp.ok) throw new Error(`API error ${resp.status}: ${await resp.text()}`)
-    const result = await resp.json() as any
+    const contentType = String(resp.headers.get('content-type') || '').toLowerCase()
 
+    if (contentType.startsWith('video/') || contentType.includes('application/octet-stream')) {
+      const buffer = await resp.arrayBuffer()
+      logTaskProgress('VideoTask', 'sync-binary-complete', { id, provider: config.provider, contentType })
+      await handleVideoCompleteBinary(id, buffer, contentType || 'video/mp4', 'generated.mp4', record.duration, record.storyboardId)
+      persistVideoCache(id, cacheKey)
+      completeWorkflowJob(workflowJobId, { outputSummary: `video_generation:${id}`, metadata: { cacheHit: false } })
+      return
+    }
+
+    const result = await resp.json() as any
     const { isAsync, taskId, videoUrl } = adapter.parseGenerateResponse(result)
 
     if (!isAsync && videoUrl) {
       logTaskProgress('VideoTask', 'sync-complete', { id, videoUrl })
-      // 同步模式
-      await handleVideoComplete(id, videoUrl, record.duration)
+      await handleVideoComplete(id, videoUrl, record.duration, record.storyboardId)
+      persistVideoCache(id, cacheKey)
+      completeWorkflowJob(workflowJobId, { outputSummary: `video_generation:${id}`, metadata: { cacheHit: false } })
       return
     }
 
-    // 异步模式：更新 taskId，开始轮询
     db.update(schema.videoGenerations)
       .set({ taskId, status: 'processing', updatedAt: now() })
       .where(eq(schema.videoGenerations.id, id))
       .run()
     logTaskProgress('VideoTask', 'poll-start', { id, taskId, provider: config.provider })
 
-    // Vidu 没有轮询端点，跳过轮询（依赖 Webhook 回调）
     if (adapter.provider === 'vidu') {
       logTaskProgress('VideoTask', 'webhook-wait', { id, taskId, provider: adapter.provider })
       return
     }
 
-    pollVideoTask(id, config, taskId!, record.storyboardId)
+    pollVideoTask(id, config, taskId!, record.storyboardId, workflowJobId, cacheKey)
   } catch (err: any) {
     logTaskError('VideoTask', 'process', { id, provider: config.provider, error: err.message })
     db.update(schema.videoGenerations)
       .set({ status: 'failed', errorMsg: err.message, updatedAt: now() })
       .where(eq(schema.videoGenerations.id, id))
       .run()
+    failWorkflowJob(workflowJobId, err.message, { metadata: { generationId: id } })
   }
 }
 
@@ -195,7 +374,7 @@ async function normalizeVideoReferenceUrls(raw: string | null | undefined): Prom
   return normalized.filter((item): item is string => !!item)
 }
 
-async function pollVideoTask(id: number, config: AIConfig, taskId: string, storyboardId?: number | null) {
+async function pollVideoTask(id: number, config: AIConfig, taskId: string, storyboardId: number | null | undefined, workflowJobId: number, cacheKey: string) {
   const adapter = getVideoAdapter(config.provider)
 
   for (let i = 0; i < 300; i++) {
@@ -219,6 +398,8 @@ async function pollVideoTask(id: number, config: AIConfig, taskId: string, story
       if (pollResp.status === 'completed' && pollResp.videoUrl) {
         logTaskSuccess('VideoTask', 'poll-complete', { id, taskId, videoUrl: pollResp.videoUrl })
         await handleVideoComplete(id, pollResp.videoUrl, null, storyboardId)
+        persistVideoCache(id, cacheKey)
+        completeWorkflowJob(workflowJobId, { outputSummary: `video_generation:${id}`, metadata: { cacheHit: false } })
         return
       }
       if (pollResp.status === 'failed') {
@@ -232,6 +413,7 @@ async function pollVideoTask(id: number, config: AIConfig, taskId: string, story
           .set({ status: 'failed', errorMsg: `Timeout: ${err.message}`, updatedAt: now() })
           .where(eq(schema.videoGenerations.id, id))
           .run()
+        failWorkflowJob(workflowJobId, `Timeout: ${err.message}`, { metadata: { generationId: id, taskId } })
         return
       }
       logTaskWarn('VideoTask', 'poll-retry', { id, taskId, attempt: i + 1, error: err.message })
@@ -252,5 +434,84 @@ async function handleVideoComplete(id: number, videoUrl: string, duration: numbe
       .set({ videoUrl: localPath, duration: duration || undefined, updatedAt: now() })
       .where(eq(schema.storyboards.id, storyboardId))
       .run()
+
+    try {
+      await ensureStoryboardVideoFrames(storyboardId, localPath)
+    } catch (err) {
+      logTaskWarn('VideoTask', 'frame-extraction-failed', {
+        id,
+        storyboardId,
+        path: localPath,
+        error: (err as Error).message,
+      })
+    }
   }
+}
+
+async function handleVideoCompleteBinary(
+  id: number,
+  buffer: ArrayBuffer,
+  mimeType: string,
+  filename: string,
+  duration: number | null | undefined,
+  storyboardId?: number | null,
+) {
+  const localPath = await saveUploadedFile(buffer, 'videos', filenameWithExtension(filename, mimeType))
+  db.update(schema.videoGenerations)
+    .set({ videoUrl: localPath, localPath, status: 'completed', completedAt: now(), updatedAt: now() })
+    .where(eq(schema.videoGenerations.id, id))
+    .run()
+  logTaskSuccess('VideoTask', 'saved-binary', { id, mimeType, localPath, storyboardId, duration })
+
+  if (storyboardId) {
+    db.update(schema.storyboards)
+      .set({ videoUrl: localPath, duration: duration || undefined, updatedAt: now() })
+      .where(eq(schema.storyboards.id, storyboardId))
+      .run()
+
+    try {
+      await ensureStoryboardVideoFrames(storyboardId, localPath)
+    } catch (err) {
+      logTaskWarn('VideoTask', 'frame-extraction-failed', {
+        id,
+        storyboardId,
+        path: localPath,
+        error: (err as Error).message,
+      })
+    }
+  }
+}
+
+function persistVideoCache(id: number, cacheKey: string) {
+  const record = db.select().from(schema.videoGenerations).where(eq(schema.videoGenerations.id, id)).all()[0]
+  if (!record || record.status !== 'completed') return
+  upsertAssetGenerationCache({
+    assetType: 'video',
+    cacheKey,
+    provider: record.provider || 'unknown',
+    model: record.model,
+    prompt: record.prompt || '',
+    referenceMode: record.referenceMode || '',
+    sourceVideoGenerationId: record.id,
+    videoUrl: record.videoUrl,
+    localPath: record.localPath,
+    metadata: {
+      storyboardId: record.storyboardId,
+      duration: record.duration,
+      aspectRatio: record.aspectRatio,
+    },
+  })
+}
+
+function filenameWithExtension(filename: string, mimeType: string) {
+  const base = String(filename || 'generated').trim().replace(/[<>:"/\\|?*]+/g, '-') || 'generated'
+  if (/\.[a-z0-9]+$/i.test(base)) return base
+  return `${base}.${mimeTypeToExtension(mimeType)}`
+}
+
+function mimeTypeToExtension(mimeType: string) {
+  const normalized = String(mimeType || '').toLowerCase()
+  if (normalized.includes('webm')) return 'webm'
+  if (normalized.includes('quicktime')) return 'mov'
+  return 'mp4'
 }

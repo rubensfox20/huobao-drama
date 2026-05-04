@@ -1,8 +1,4 @@
-/**
- * 火山引擎 Seedance 视频生成 Adapter
- * 端点: /api/v3/contents/generations/tasks (注意 /api/v3 前缀)
- * 响应: { id: "task-xxx" } -> 轮询获取状态
- */
+
 import type {
   VideoProviderAdapter,
   ProviderRequest,
@@ -21,7 +17,7 @@ export class VolcEngineVideoAdapter implements VideoProviderAdapter {
 
     const content: any[] = [{ type: 'text', text: record.prompt || '' }]
 
-    // 添加参考图
+
     if (record.referenceMode === 'single' && record.imageUrl) {
       content.push({ type: 'image_url', image_url: { url: record.imageUrl } })
     } else if (record.referenceMode === 'first_last') {
@@ -50,7 +46,7 @@ export class VolcEngineVideoAdapter implements VideoProviderAdapter {
     }
 
     return {
-      url: joinProviderUrl(config.baseUrl, '/api/v3', '/contents/generations/tasks'),
+      url: joinProviderUrl(config.baseUrl, '/api/v1', '/contents/generations/tasks'),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -64,7 +60,7 @@ export class VolcEngineVideoAdapter implements VideoProviderAdapter {
     if (result.id) {
       return { isAsync: true, taskId: result.id }
     }
-    // 同步返回
+
     const videoUrl = result.video_url || result.content?.video_url || result.data?.video_url
     if (videoUrl) {
       return { isAsync: false, videoUrl }
@@ -74,7 +70,7 @@ export class VolcEngineVideoAdapter implements VideoProviderAdapter {
 
   buildPollRequest(config: AIConfig, taskId: string): ProviderRequest {
     return {
-      url: joinProviderUrl(config.baseUrl, '/api/v3', `/contents/generations/tasks/${taskId}`),
+      url: joinProviderUrl(config.baseUrl, '/api/v1', `/contents/generations/tasks/${taskId}`),
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${config.apiKey}`,

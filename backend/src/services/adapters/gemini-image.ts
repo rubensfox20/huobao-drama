@@ -1,11 +1,4 @@
-/**
- * Gemini 图片生成 Adapter
- * 认证: 同时兼容两种方式
- * 1. URL Query 参数 ?key=
- * 2. Header 认证（x-goog-api-key / Authorization: Bearer）
- * 请求: Google REST 风格的 contents[].parts[] 结构
- * 响应: base64 编码在 inlineData.data 中，无 URL
- */
+
 import type {
   ImageProviderAdapter,
   ProviderRequest,
@@ -21,11 +14,11 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
   provider = 'gemini'
 
   buildGenerateRequest(config: AIConfig, record: ImageGenerationRecord): ProviderRequest {
-    // Gemini 模型名格式: "models/gemini-2.5-flash-image" 或直接 "gemini-2.5-flash-image"
+
     const modelName = record.model || config.model || 'gemini-2.5-flash-image'
     const model = modelName.startsWith('models/') ? modelName : `models/${modelName}`
 
-    // Google REST 风格请求体
+
     const parts: any[] = []
     if (record.referenceImages) {
       try {
@@ -52,7 +45,7 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
       generationConfig: {
         responseModalities: ['IMAGE', 'TEXT'],
         imageConfig: {
-          // 解析 size 如 "1920x1080" -> aspectRatio
+
           aspectRatio: this.parseAspectRatio(record.size),
           imageSize: this.parseImageSize(record.size),
         },
@@ -68,7 +61,6 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
       headers: {
         'Content-Type': 'application/json',
         'x-goog-api-key': config.apiKey,
-        'Authorization': `Bearer ${config.apiKey}`,
       },
       body,
     }
@@ -102,12 +94,12 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
   }
 
   parsePollResponse(result: any): ImagePollResponse {
-    // Gemini 是同步的，通常不会走到这里
+
     return { status: 'completed' }
   }
 
   buildPollRequest(config: AIConfig, taskId: string): ProviderRequest {
-    // Gemini 不需要轮询，但实现接口以保持一致
+
     const url = new URL(joinProviderUrl(config.baseUrl, '/v1beta', `/${taskId}`))
     url.searchParams.set('key', config.apiKey)
     return {
@@ -115,7 +107,6 @@ export class GeminiImageAdapter implements ImageProviderAdapter {
       method: 'GET',
       headers: {
         'x-goog-api-key': config.apiKey,
-        'Authorization': `Bearer ${config.apiKey}`,
       },
       body: undefined,
     }

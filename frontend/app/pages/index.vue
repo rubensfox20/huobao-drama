@@ -3,14 +3,14 @@
     <!-- Page Header -->
     <div class="page-head">
       <div class="head-left">
-        <h1 class="page-title">短剧项目</h1>
-        <p class="page-desc">{{ dramas.length }} 个项目</p>
+        <h1 class="page-title">{{ messages.home.title }}</h1>
+        <p class="page-desc">{{ t('home.projectCount', { count: dramas.length }) }}</p>
       </div>
       <button class="btn btn-primary" @click="showCreate = true">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
           <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
-        新建项目
+        {{ messages.home.newProject }}
       </button>
     </div>
 
@@ -39,9 +39,9 @@
           <div class="card-header">
             <div class="episode-badge">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>
-              {{ d.episodes?.length || 0 }} 集
+              {{ t('home.episodeCount', { count: d.episodes?.length || 0 }) }}
             </div>
-            <button class="btn btn-ghost btn-icon card-delete" @click.stop="delDrama(d)" title="删除">
+            <button class="btn btn-ghost btn-icon card-delete" @click.stop="requestDeleteDrama(d)" :title="messages.home.deleteTitle">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
               </svg>
@@ -82,8 +82,8 @@
             <line x1="8" y1="12" x2="16" y2="12"/>
           </svg>
         </div>
-        <p class="empty-title">新建第一个短剧项目</p>
-        <p class="empty-desc">从剧本到成片，AI 助力的短剧制作工作台</p>
+        <p class="empty-title">{{ messages.home.emptyTitle }}</p>
+        <p class="empty-desc">{{ messages.home.emptyDescription }}</p>
       </div>
     </div>
 
@@ -97,50 +97,88 @@
               <line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
             </svg>
           </div>
-          <h2 class="modal-title">新建短剧项目</h2>
-          <p class="modal-desc">输入项目基本信息，即可开始制作</p>
+          <h2 class="modal-title">{{ messages.home.modalTitle }}</h2>
+          <p class="modal-desc">{{ messages.home.modalDescription }}</p>
         </div>
         <form @submit.prevent="create" class="modal-form">
           <label class="field">
-            <span class="field-label">项目名称 <span class="required">*</span></span>
-            <input v-model="form.title" class="input" placeholder="例如：都市情感短剧《时光邮局》" required autofocus />
+            <span class="field-label">{{ messages.home.nameLabel }} <span class="required">*</span></span>
+            <input v-model="form.title" class="input" :placeholder="messages.home.namePlaceholder" required autofocus />
           </label>
           <div class="field-row">
             <label class="field">
-              <span class="field-label">计划集数</span>
+              <span class="field-label">{{ messages.home.episodesLabel }}</span>
               <input v-model.number="form.total_episodes" class="input" type="number" min="1" max="100" />
             </label>
             <label class="field">
-              <span class="field-label">视觉风格</span>
-              <BaseSelect v-model="form.style" :options="styleSelectOptions" placeholder="选择风格" searchable />
+              <span class="field-label">{{ messages.home.visualStyleLabel }}</span>
+              <BaseSelect v-model="form.style" :options="styleSelectOptions" :placeholder="messages.home.visualStylePlaceholder" searchable />
             </label>
           </div>
           <div class="modal-actions">
-            <button type="button" class="btn" @click="showCreate = false">取消</button>
+            <button type="button" class="btn" @click="showCreate = false">{{ messages.common.cancel }}</button>
             <button type="submit" class="btn btn-primary">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
                 <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
               </svg>
-              创建项目
+              {{ messages.home.createProject }}
             </button>
           </div>
         </form>
       </div>
     </div>
+
+    <!-- Delete Dialog -->
+    <Teleport to="body">
+      <div v-if="pendingDeleteDrama" class="overlay" @click.self="closeDeleteDialog">
+        <div class="modal delete-modal card" role="dialog" aria-modal="true" :aria-labelledby="'delete-drama-title'">
+          <div class="delete-modal-head">
+            <div class="delete-modal-icon">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+              </svg>
+            </div>
+            <div class="delete-modal-copy">
+              <h2 id="delete-drama-title" class="modal-title">{{ messages.home.deleteDialogTitle }}</h2>
+              <p class="modal-desc">{{ messages.home.deleteDialogDescription }}</p>
+            </div>
+          </div>
+
+          <div class="delete-target">
+            <span class="delete-target-label">{{ messages.home.deleteDialogProjectLabel }}</span>
+            <strong class="delete-target-title">{{ pendingDeleteDrama.title }}</strong>
+            <span class="delete-target-meta">{{ t('home.episodeCount', { count: pendingDeleteDrama.episodes?.length || 0 }) }}</span>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn" :disabled="deletingDrama" @click="closeDeleteDialog">{{ messages.common.cancel }}</button>
+            <button type="button" class="btn btn-danger" :disabled="deletingDrama" @click="confirmDeleteDrama">
+              <svg v-if="!deletingDrama" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+              </svg>
+              {{ deletingDrama ? messages.home.deleteDialogDeleting : messages.home.deleteDialogConfirm }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
 import { toast } from 'vue-sonner'
 import { dramaAPI } from '~/composables/useApi'
+import { formatRelativeDate, useAppI18n } from '~/composables/useAppI18n'
 import BaseSelect from '~/components/BaseSelect.vue'
 
+const { messages, t } = useAppI18n()
 const dramas = ref([])
 const loading = ref(false)
 const showCreate = ref(false)
+const pendingDeleteDrama = ref(null)
+const deletingDrama = ref(false)
 const form = ref({ title: '', total_episodes: 1, style: '' })
-const styles = ['realistic', 'anime', 'ghibli', 'cinematic', 'comic', 'watercolor']
-const styleSelectOptions = computed(() => styles.map(s => ({ label: s, value: s })))
+const styleSelectOptions = computed(() => Object.entries(messages.home.styles).map(([value, label]) => ({ value, label })))
 
 async function load() {
   loading.value = true
@@ -165,27 +203,34 @@ async function create() {
   }
 }
 
-async function delDrama(d) {
-  if (!confirm(`确定删除「${d.title}」？此操作不可恢复。`)) return
+function requestDeleteDrama(d) {
+  pendingDeleteDrama.value = d
+}
+
+function closeDeleteDialog() {
+  if (deletingDrama.value) return
+  pendingDeleteDrama.value = null
+}
+
+async function confirmDeleteDrama() {
+  const d = pendingDeleteDrama.value
+  if (!d) return
+  deletingDrama.value = true
   try {
     await dramaAPI.del(d.id)
-    toast.success('已删除')
-    load()
+    toast.success(messages.home.projectDeleted)
+    pendingDeleteDrama.value = null
+    await load()
   } catch (e) {
     toast.error(e.message)
+  } finally {
+    deletingDrama.value = false
   }
 }
 
 function fmtDate(s) {
   if (!s) return ''
-  const d = new Date(s)
-  const now = new Date()
-  const diff = now.getTime() - d.getTime()
-  if (diff < 60000) return '刚刚'
-  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`
-  if (diff < 604800000) return `${Math.floor(diff / 86400000)} 天前`
-  return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+  return formatRelativeDate(s)
 }
 
 function getProgress(d) {
@@ -275,8 +320,16 @@ onMounted(load)
 }
 .episode-badge svg { color: var(--accent); }
 
-.card-delete { opacity: 0; transition: opacity 0.15s; }
+.card-delete {
+  opacity: 0;
+  color: var(--text-3);
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
 .project-card:hover .card-delete { opacity: 1; }
+.card-delete:hover {
+  background: var(--error-bg);
+  color: var(--error);
+}
 
 .project-title {
   font-family: var(--font-display);
@@ -384,4 +437,101 @@ onMounted(load)
 .required { color: var(--error); }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 6px; }
+
+.delete-modal {
+  width: min(420px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.delete-modal-head {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.delete-modal-icon {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  background: var(--error-bg);
+  color: var(--error);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.delete-modal-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.delete-target {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+}
+.delete-target-label {
+  grid-column: 1 / -1;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.delete-target-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--text-0);
+}
+.delete-target-meta {
+  align-self: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.btn-danger {
+  background: var(--error);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 8px 20px rgba(210, 79, 102, 0.22), 0 2px 6px rgba(145, 42, 62, 0.16);
+}
+.btn-danger:hover {
+  background: var(--error);
+  color: #fff;
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(210, 79, 102, 0.26), 0 4px 10px rgba(145, 42, 62, 0.18);
+}
+
+@media (max-width: 560px) {
+  .page {
+    padding: 22px 18px 32px;
+  }
+
+  .page-head,
+  .modal-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .modal,
+  .delete-modal {
+    width: calc(100vw - 32px);
+    padding: 24px;
+  }
+
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

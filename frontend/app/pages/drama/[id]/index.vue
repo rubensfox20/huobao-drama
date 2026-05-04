@@ -1,13 +1,12 @@
 <template>
   <div class="page" v-if="drama">
-    <!-- Header -->
     <div class="page-head">
       <div class="head-left">
         <button class="back-btn" @click="navigateTo('/')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
           </svg>
-          返回
+          {{ messages.dramaDetail.back }}
         </button>
         <div class="head-info">
           <h1 class="page-title">{{ drama.title }}</h1>
@@ -16,12 +15,12 @@
             <span v-if="drama.style" class="meta-divider"></span>
             <span class="meta-item">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              {{ drama.characters?.length || 0 }} 角色
+              {{ t('dramaDetail.characters', { count: drama.characters?.length || 0 }) }}
             </span>
             <span class="meta-divider"></span>
             <span class="meta-item">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/></svg>
-              {{ drama.scenes?.length || 0 }} 场景
+              {{ t('dramaDetail.scenes', { count: drama.scenes?.length || 0 }) }}
             </span>
           </div>
         </div>
@@ -30,11 +29,10 @@
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
           <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
-        添加集
+        {{ messages.dramaDetail.addEpisode }}
       </button>
     </div>
 
-    <!-- Episode List -->
     <div class="section-label">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <rect x="2" y="2" width="20" height="20" rx="2.5"/>
@@ -43,7 +41,7 @@
         <line x1="13" y1="8" x2="13" y2="16"/>
         <line x1="16" y1="8" x2="16" y2="16"/>
       </svg>
-      剧集列表
+      {{ messages.dramaDetail.episodeList }}
     </div>
 
     <div class="ep-grid">
@@ -56,10 +54,10 @@
       >
         <div class="ep-number">E{{ String(ep.episode_number || ep.episodeNumber).padStart(2, '0') }}</div>
         <div class="ep-body">
-          <span class="ep-title">{{ ep.title }}</span>
+          <span class="ep-title">{{ getEpisodeTitle(ep) }}</span>
           <div class="ep-status">
             <span :class="['status-dot', hasScript(ep) ? 'dot-ready' : 'dot-pending']"></span>
-            <span class="status-text">{{ hasScript(ep) ? '已完成剧本' : '待编写' }}</span>
+            <span class="status-text">{{ hasScript(ep) ? messages.dramaDetail.scriptReady : messages.dramaDetail.scriptPending }}</span>
             <span v-if="ep.duration" class="ep-duration">{{ ep.duration }}s</span>
           </div>
         </div>
@@ -70,7 +68,6 @@
         </div>
       </div>
 
-      <!-- Empty episode state -->
       <div v-if="!drama.episodes?.length" class="card ep-empty">
         <div class="ep-empty-icon">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
@@ -79,81 +76,91 @@
             <line x1="8" y1="12" x2="16" y2="12"/>
           </svg>
         </div>
-        <p>点击上方「添加集」创建第一集</p>
+        <p>{{ messages.dramaDetail.emptyEpisodes }}</p>
       </div>
     </div>
 
-    <div v-if="addDialog" class="dialog-mask" @click.self="addDialog = false">
-      <div class="card dialog">
-        <div class="dialog-head">
-          <div class="dialog-head-copy">
-            <div class="dialog-kicker">Episode Setup</div>
-            <div class="dialog-title-row">
-              <div class="dialog-title">创建新集</div>
-              <span class="dialog-badge">配置将锁定</span>
+    <Teleport to="body">
+      <div v-if="addDialog" class="dialog-mask" @click.self="addDialog = false">
+        <div class="card dialog">
+          <div class="dialog-head">
+            <div class="dialog-head-copy">
+              <div class="dialog-kicker">{{ messages.dramaDetail.dialog.kicker }}</div>
+              <div class="dialog-title-row">
+                <div class="dialog-title">{{ messages.dramaDetail.dialog.title }}</div>
+                <span class="dialog-badge">{{ messages.dramaDetail.dialog.badge }}</span>
+              </div>
+              <div class="dialog-sub">{{ messages.dramaDetail.dialog.description }}</div>
             </div>
-            <div class="dialog-sub">为这一集预先锁定图片、视频和音频生成服务。创建后，这些生成链路将始终跟随当前集配置。</div>
+            <button class="btn btn-ghost btn-icon" type="button" aria-label="Fechar" @click="addDialog = false">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
           </div>
-          <button class="back-btn" @click="addDialog = false">取消</button>
-        </div>
-        <div class="dialog-summary">
-          <div class="summary-chip">图片 · {{ imageConfigs.length }} 可选</div>
-          <div class="summary-chip">视频 · {{ videoConfigs.length }} 可选</div>
-          <div class="summary-chip">音频 · {{ audioConfigs.length }} 可选</div>
-        </div>
-        <div class="dialog-body">
-          <div class="dialog-section">
-            <div class="dialog-section-head">
-              <span class="dialog-section-title">基础信息</span>
-              <span class="dialog-section-copy">这一项只影响显示名称，不影响生成配置</span>
+          <div class="dialog-summary">
+            <div class="summary-chip">{{ t('dramaDetail.dialog.imageSummary', { count: imageConfigs.length }) }}</div>
+            <div class="summary-chip">{{ t('dramaDetail.dialog.videoSummary', { count: videoConfigs.length }) }}</div>
+            <div class="summary-chip">{{ t('dramaDetail.dialog.audioSummary', { count: audioConfigs.length }) }}</div>
+          </div>
+          <div class="dialog-body">
+            <div class="dialog-section">
+              <div class="dialog-section-head">
+                <span class="dialog-section-title">{{ messages.dramaDetail.dialog.basicTitle }}</span>
+                <span class="dialog-section-copy">{{ messages.dramaDetail.dialog.basicCopy }}</span>
+              </div>
+              <label class="field">
+                <span class="field-label">{{ messages.dramaDetail.dialog.titleLabel }}</span>
+                <input v-model="newEpisodeTitle" class="input" :placeholder="messages.dramaDetail.dialog.titlePlaceholder" />
+                <span class="field-hint">{{ messages.dramaDetail.dialog.titleHint }}</span>
+              </label>
             </div>
-            <label class="field">
-              <span class="field-label">标题</span>
-              <input v-model="newEpisodeTitle" class="input" placeholder="默认按集数自动命名" />
-              <span class="field-hint">留空时会自动按集数命名，例如“第 3 集”。</span>
-            </label>
-          </div>
 
-          <div class="dialog-section">
-            <div class="dialog-section-head">
-              <span class="dialog-section-title">生成配置</span>
-              <span class="dialog-section-copy">创建后不可更改，建议在这里一次性选对</span>
-            </div>
-            <div class="config-grid">
-              <label class="config-card">
-                <span class="config-card-kicker">IMAGE</span>
-                <span class="field-label">图片配置</span>
-                <BaseSelect v-model="newEpisodeImageConfigId" :options="imageConfigOptions" placeholder="选择图片服务" searchable />
-              </label>
-              <label class="config-card">
-                <span class="config-card-kicker">VIDEO</span>
-                <span class="field-label">视频配置</span>
-                <BaseSelect v-model="newEpisodeVideoConfigId" :options="videoConfigOptions" placeholder="选择视频服务" searchable />
-              </label>
-              <label class="config-card">
-                <span class="config-card-kicker">AUDIO</span>
-                <span class="field-label">音频配置</span>
-                <BaseSelect v-model="newEpisodeAudioConfigId" :options="audioConfigOptions" placeholder="选择音频服务" searchable />
-              </label>
+            <div class="dialog-section">
+              <div class="dialog-section-head">
+                <span class="dialog-section-title">{{ messages.dramaDetail.dialog.configTitle }}</span>
+                <span class="dialog-section-copy">{{ messages.dramaDetail.dialog.configCopy }}</span>
+              </div>
+              <div class="config-grid">
+                <label class="config-card">
+                  <span class="config-card-kicker">IMAGE</span>
+                  <span class="field-label">{{ messages.dramaDetail.dialog.imageConfig }}</span>
+                  <BaseSelect v-model="newEpisodeImageConfigId" :options="imageConfigOptions" :placeholder="messages.dramaDetail.dialog.imageConfigPlaceholder" searchable />
+                </label>
+                <label class="config-card">
+                  <span class="config-card-kicker">VIDEO</span>
+                  <span class="field-label">{{ messages.dramaDetail.dialog.videoConfig }}</span>
+                  <BaseSelect v-model="newEpisodeVideoConfigId" :options="videoConfigOptions" :placeholder="messages.dramaDetail.dialog.videoConfigPlaceholder" searchable />
+                </label>
+                <label class="config-card">
+                  <span class="config-card-kicker">AUDIO</span>
+                  <span class="field-label">{{ messages.dramaDetail.dialog.audioConfig }}</span>
+                  <BaseSelect v-model="newEpisodeAudioConfigId" :options="audioConfigOptions" :placeholder="messages.dramaDetail.dialog.audioConfigPlaceholder" searchable />
+                </label>
+              </div>
             </div>
           </div>
-        </div>
-        <div class="dialog-foot">
-          <div class="dialog-foot-copy">创建后，工作台中的图片、视频、音频生成入口都会锁定到当前集。</div>
-          <button class="btn btn-primary" :disabled="creatingEpisode || !canCreateEpisode" @click="addEpisode">
-            {{ creatingEpisode ? '创建中...' : '创建并锁定配置' }}
-          </button>
+          <div class="dialog-foot">
+            <div class="dialog-foot-copy">{{ messages.dramaDetail.dialog.footer }}</div>
+            <button class="btn btn-primary" :disabled="creatingEpisode || !canCreateEpisode" @click="addEpisode">
+              {{ creatingEpisode ? messages.dramaDetail.dialog.creating : messages.dramaDetail.dialog.create }}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
 import { toast } from 'vue-sonner'
+import BaseSelect from '~/components/BaseSelect.vue'
+import { useAppI18n } from '~/composables/useAppI18n'
 import { aiConfigAPI, dramaAPI, episodeAPI } from '~/composables/useApi'
 
 const route = useRoute()
+const { messages, t } = useAppI18n()
 const drama = ref(null)
 const dramaId = Number(route.params.id)
 const addDialog = ref(false)
@@ -166,12 +173,34 @@ const newEpisodeImageConfigId = ref(null)
 const newEpisodeVideoConfigId = ref(null)
 const newEpisodeAudioConfigId = ref(null)
 
-function hasScript(ep) { return !!(ep.script_content || ep.scriptContent) }
+function hasScript(ep) {
+  return !!(ep.script_content || ep.scriptContent)
+}
+
+function getEpisodeNumber(ep) {
+  return Number(ep.episode_number || ep.episodeNumber || 0)
+}
+
+function getEpisodeTitle(ep) {
+  const rawTitle = String(ep.title || '').trim()
+  const episodeNumber = getEpisodeNumber(ep)
+  const chineseAutoTitle = rawTitle.match(/^\u7b2c\s*(\d+)\s*\u96c6$/u)
+  if (chineseAutoTitle) {
+    return t('dramaDetail.episodeAutoTitle', { number: Number(chineseAutoTitle[1]) || episodeNumber || 1 })
+  }
+  if (rawTitle) return rawTitle
+  return t('dramaDetail.episodeAutoTitle', { number: episodeNumber || 1 })
+}
 
 function configLabel(config) {
   if (!config) return ''
   let modelName = ''
-  try { const m = JSON.parse(config.model || '[]'); modelName = Array.isArray(m) ? (m[0] || '') : (m || '') } catch { modelName = config.model || '' }
+  try {
+    const parsed = JSON.parse(config.model || '[]')
+    modelName = Array.isArray(parsed) ? (parsed[0] || '') : (parsed || '')
+  } catch {
+    modelName = config.model || ''
+  }
   return modelName ? `${config.name} · ${modelName} (${config.provider})` : `${config.name} (${config.provider})`
 }
 
@@ -221,7 +250,7 @@ async function addEpisode() {
       video_config_id: newEpisodeVideoConfigId.value,
       audio_config_id: newEpisodeAudioConfigId.value,
     })
-    toast.success('已添加新集')
+    toast.success(messages.dramaDetail.episodeCreated)
     addDialog.value = false
     load()
   } catch (e) {
@@ -231,7 +260,10 @@ async function addEpisode() {
   }
 }
 
-onMounted(() => { load(); loadConfigs() })
+onMounted(() => {
+  load()
+  loadConfigs()
+})
 </script>
 
 <style scoped>
@@ -282,7 +314,6 @@ onMounted(() => { load(); loadConfigs() })
   font-size: 12px; color: var(--text-2);
 }
 
-/* Section label */
 .section-label {
   display: flex; align-items: center; gap: 7px;
   font-size: 11px; font-weight: 700;
@@ -291,7 +322,6 @@ onMounted(() => { load(); loadConfigs() })
   margin-bottom: 12px;
 }
 
-/* Episode Grid */
 .ep-grid { display: flex; flex-direction: column; gap: 10px; max-width: 760px; }
 
 .ep-card {
@@ -338,7 +368,6 @@ onMounted(() => { load(); loadConfigs() })
 .ep-arrow { color: var(--text-3); flex-shrink: 0; transition: transform 0.18s; }
 .ep-card:hover .ep-arrow { transform: translateX(3px); color: var(--accent); }
 
-/* Empty */
 .ep-empty {
   display: flex; flex-direction: column; align-items: center; gap: 10px;
   padding: 48px; text-align: center; color: var(--text-3); font-size: 13px;

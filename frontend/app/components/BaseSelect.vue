@@ -2,7 +2,7 @@
   <div class="base-select" ref="rootEl">
     <!-- Trigger -->
     <button type="button" class="base-select-trigger" :class="{ open: isOpen }" @click="toggle">
-      <span :class="selectedLabel ? '' : 'placeholder'" class="base-select-label">{{ selectedLabel || placeholder }}</span>
+      <span :class="selectedLabel ? '' : 'placeholder'" class="base-select-label">{{ selectedLabel || resolvedPlaceholder }}</span>
       <ChevronDown :size="13" class="base-select-arrow" />
     </button>
 
@@ -16,7 +16,7 @@
             ref="searchInputEl"
             v-model="searchQuery"
             class="base-select-search-input"
-            placeholder="搜索..."
+            :placeholder="messages.common.searchPlaceholder"
             @keydown="onSearchKeydown"
           />
         </div>
@@ -36,7 +36,7 @@
               >{{ opt.label }}</button>
             </template>
           </template>
-          <div v-else class="base-select-empty">无匹配结果</div>
+          <div v-else class="base-select-empty">{{ messages.common.noResults }}</div>
         </div>
       </div>
     </Teleport>
@@ -49,13 +49,14 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { ChevronDown, Search } from 'lucide-vue-next'
+import { useAppI18n } from '~/composables/useAppI18n'
 
 const props = defineProps({
   modelValue: { type: [String, Number], default: '' },
   options: { type: Array, default: () => [] }, // [{ label, value, group? }, ...] or [{ label, group, options: [] }]
-  placeholder: { type: String, default: '请选择...' },
+  placeholder: { type: String, default: '' },
   searchable: { type: Boolean, default: true },
 })
 const emit = defineEmits(['update:modelValue'])
@@ -67,7 +68,10 @@ const dropdownEl = ref()
 const searchInputEl = ref()
 const optionsEl = ref()
 const highlightedIdx = ref(-1)
-const dropdownStyle = ref({})
+const dropdownStyle = ref({ visibility: 'hidden' })
+let positionFrame = 0
+const { messages } = useAppI18n()
+const resolvedPlaceholder = computed(() => props.placeholder || messages.common.selectPlaceholder)
 
 // Normalize options: support both flat list and grouped format
 const normalizedGroups = computed(() => {
@@ -106,7 +110,7 @@ const flatOptions = computed(() => filteredGroups.value.flatMap(g => g.options))
 
 function getGlobalIdx(gi, oi) {
   let idx = 0
-  for (let i = 0; i < gi; i++) idx += normalizedGroups.value[i].options.length
+  for (let i = 0; i < gi; i++) idx += filteredGroups.value[i].options.length
   return idx + oi
 }
 
@@ -133,11 +137,13 @@ function toggle() {
 
 async function open() {
   isOpen.value = true
+  dropdownStyle.value = { visibility: 'hidden' }
   highlightedIdx.value = flatOptions.value.findIndex(o => o.value === props.modelValue)
   await nextTick()
   searchQuery.value = ''
   searchInputEl.value?.focus()
-  positionDropdown()
+  primeDropdownLayout()
+  schedulePositionDropdown()
 }
 
 function close() {
@@ -152,18 +158,71 @@ function pick(opt) {
 
 function positionDropdown() {
   const rect = rootEl.value?.getBoundingClientRect()
-  if (!rect) return
-  const top = rect.bottom + 4
-  const left = rect.left
-  // Keep within viewport
-  const maxHeight = window.innerHeight - top - 16
+  const dropdown = dropdownEl.value
+  const options = optionsEl.value
+  if (!rect || !dropdown || !options) return
+
+  const viewportPadding = 16
+  const gap = 4
+  const minDropdownWidth = 180
+  const maxOptionsHeight = 260
+  const dropdownBorderHeight = 2
+  const dropdownVerticalPadding = 12
+  const searchBottomGap = searchable.value ? 6 : 0
+  const searchHeight = dropdown.querySelector('.base-select-search')?.offsetHeight ?? 0
+  const desiredOptionsHeight = Math.min(options.scrollHeight, maxOptionsHeight)
+  const desiredDropdownHeight = searchHeight + searchBottomGap + desiredOptionsHeight + dropdownBorderHeight + dropdownVerticalPadding
+  const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - gap - viewportPadding)
+  const spaceAbove = Math.max(0, rect.top - gap - viewportPadding)
+  const openAbove = desiredDropdownHeight > spaceBelow && spaceAbove > spaceBelow
+  const availableHeight = openAbove ? spaceAbove : spaceBelow
+  const availableOptionsHeight = Math.max(48, availableHeight - searchHeight - searchBottomGap - dropdownBorderHeight - dropdownVerticalPadding)
+  const optionsMaxHeight = Math.min(desiredOptionsHeight, availableOptionsHeight)
+  const dropdownHeight = searchHeight + searchBottomGap + optionsMaxHeight + dropdownBorderHeight + dropdownVerticalPadding
+  const top = openAbove ? rect.top - gap - dropdownHeight : rect.bottom + gap
+  const dropdownWidth = Math.max(rect.width, minDropdownWidth)
+  const maxLeft = window.innerWidth - dropdownWidth - viewportPadding
+  const left = Math.min(Math.max(rect.left, viewportPadding), Math.max(viewportPadding, maxLeft))
+
   dropdownStyle.value = {
     position: 'fixed',
-    top: `${top}px`,
+    top: `${Math.max(viewportPadding, top)}px`,
     left: `${left}px`,
-    width: `${rect.width}px`,
-    maxHeight: `${Math.min(maxHeight, 400)}px`,
+    width: `${dropdownWidth}px`,
+    maxHeight: `${dropdownHeight}px`,
+    '--base-select-options-max-height': `${optionsMaxHeight}px`,
+    visibility: 'visible',
   }
+}
+
+function primeDropdownLayout() {
+  const rect = rootEl.value?.getBoundingClientRect()
+  if (!rect) return
+
+  const viewportPadding = 16
+  const minDropdownWidth = 180
+  const dropdownWidth = Math.max(rect.width, minDropdownWidth)
+  const maxLeft = window.innerWidth - dropdownWidth - viewportPadding
+  const left = Math.min(Math.max(rect.left, viewportPadding), Math.max(viewportPadding, maxLeft))
+
+  dropdownStyle.value = {
+    position: 'fixed',
+    top: `${Math.max(viewportPadding, rect.bottom + 4)}px`,
+    left: `${left}px`,
+    width: `${dropdownWidth}px`,
+    visibility: 'hidden',
+  }
+}
+
+function schedulePositionDropdown() {
+  if (positionFrame) cancelAnimationFrame(positionFrame)
+  positionFrame = requestAnimationFrame(() => {
+    positionDropdown()
+    positionFrame = requestAnimationFrame(() => {
+      positionDropdown()
+      positionFrame = 0
+    })
+  })
 }
 
 function onSearchKeydown(e) {
@@ -184,12 +243,33 @@ function onSearchKeydown(e) {
 }
 
 watch(isOpen, val => {
-  if (val) document.addEventListener('scroll', positionDropdown, true)
-  else document.removeEventListener('scroll', positionDropdown, true)
+  if (val) {
+    document.addEventListener('scroll', positionDropdown, true)
+    window.addEventListener('resize', positionDropdown)
+  } else {
+    document.removeEventListener('scroll', positionDropdown, true)
+    window.removeEventListener('resize', positionDropdown)
+  }
 })
 
+watch(searchQuery, async () => {
+  if (!isOpen.value) return
+  await nextTick()
+  schedulePositionDropdown()
+})
+
+watch(filteredGroups, async () => {
+  if (!isOpen.value) return
+  await nextTick()
+  schedulePositionDropdown()
+})
+
+const searchable = computed(() => props.searchable)
+
 onBeforeUnmount(() => {
+  if (positionFrame) cancelAnimationFrame(positionFrame)
   document.removeEventListener('scroll', positionDropdown, true)
+  window.removeEventListener('resize', positionDropdown)
 })
 </script>
 
@@ -204,10 +284,12 @@ onBeforeUnmount(() => {
 .base-select-trigger {
   display: inline-flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 6px;
-  padding: 7px 28px 7px 10px;
-  font-size: 12px;
+  padding: 9px 13px;
+  min-height: 0;
+  font-size: 13.5px;
+  line-height: 1.2;
   font-family: var(--font-body);
   color: var(--text-0);
   background: var(--bg-input);
@@ -220,6 +302,7 @@ onBeforeUnmount(() => {
   width: 100%;
   max-width: none;
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 .base-select-trigger:hover {
   border-color: var(--border-strong);
@@ -241,6 +324,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-width: 0;
   text-align: left;
+  line-height: 1.2;
 }
 
 .base-select-arrow {
@@ -255,11 +339,13 @@ onBeforeUnmount(() => {
 
 /* Dropdown */
 .base-select-dropdown {
+  --base-select-options-max-height: 260px;
   background: var(--bg-0);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
+  padding: 6px;
   z-index: 9999;
   animation: baseSelectIn 0.15s var(--ease-out);
 }
@@ -268,9 +354,10 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--border);
   color: var(--text-2);
+  margin-bottom: 6px;
 }
 .base-select-search-input {
   flex: 1;
@@ -286,9 +373,12 @@ onBeforeUnmount(() => {
 }
 
 .base-select-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   overflow-y: auto;
-  max-height: 260px;
-  padding: 4px;
+  max-height: var(--base-select-options-max-height);
+  padding: 0;
 }
 
 .base-select-group-label {
@@ -305,10 +395,14 @@ onBeforeUnmount(() => {
 }
 
 .base-select-option {
-  display: block;
+  appearance: none;
+  display: flex;
+  align-items: flex-start;
   width: 100%;
-  padding: 7px 10px;
+  min-height: 46px;
+  padding: 10px 12px;
   font-size: 13px;
+  line-height: 1.35;
   font-family: var(--font-body);
   color: var(--text-1);
   background: none;
@@ -317,7 +411,10 @@ onBeforeUnmount(() => {
   cursor: pointer;
   text-align: left;
   transition: background 0.1s;
-  word-break: break-all;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  box-sizing: border-box;
 }
 .base-select-option:hover,
 .base-select-option.highlighted {

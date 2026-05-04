@@ -1,3 +1,5 @@
+const backendOrigin = process.env.NUXT_DEV_BACKEND_URL || 'http://localhost:5679'
+
 export default defineNuxtConfig({
   srcDir: 'app/',
   ssr: false,
@@ -7,7 +9,7 @@ export default defineNuxtConfig({
   },
   app: {
     head: {
-      title: '火宝短剧',
+      title: 'Huobao Drama',
       meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1' }],
       link: [
         { rel: 'icon', type: 'image/png', href: '/favicon.png' },
@@ -18,9 +20,15 @@ export default defineNuxtConfig({
   vite: {
     server: {
       proxy: {
-        '/api': { target: 'http://localhost:5679', changeOrigin: true },
-        '/static': { target: 'http://localhost:5679', changeOrigin: true },
+        '/api': { target: backendOrigin, changeOrigin: true },
+        '/static': { target: backendOrigin, changeOrigin: true },
       },
+    },
+  },
+  nitro: {
+    routeRules: {
+      '/api/**': { proxy: `${backendOrigin}/api/**` },
+      '/static/**': { proxy: `${backendOrigin}/static/**` },
     },
   },
   compatibilityDate: '2025-05-15',

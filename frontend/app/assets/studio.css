@@ -192,6 +192,7 @@ select.input { appearance: none; cursor: pointer; background-image: url("data:im
   padding: 3px 9px; font-size: 11px; font-weight: 500;
   border-radius: 99px; background: var(--bg-2); color: var(--text-2);
   letter-spacing: 0.02em; font-family: var(--font-body);
+  white-space: nowrap; flex-shrink: 0;
 }
 .tag-accent { background: var(--accent-bg); color: var(--accent-text); }
 .tag-success { background: var(--success-bg); color: var(--success); }
@@ -254,3 +255,54 @@ select.input { appearance: none; cursor: pointer; background-image: url("data:im
 .stagger-3 { animation-delay: 0.15s; }
 .stagger-4 { animation-delay: 0.2s; }
 .stagger-5 { animation-delay: 0.25s; }
+
+/* === Anti-Flash for Broken Media === */
+/* O browser só renderiza pseudo-elementos em <img> quando o src falha.
+   Usamos isso para cobrir o ícone nativo de imagem quebrada IMEDIATAMENTE,
+   eliminando o "flash" antes do plugin JS disparar o evento de erro. */
+img {
+  color: transparent; /* Oculta o alt text */
+  position: relative;
+}
+img::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(76,125,255,0.04) 0%, rgba(18,25,42,0.03) 100%);
+  border-radius: inherit;
+  z-index: 10;
+}
+
+/* === Broken Image Placeholder === */
+.broken-image-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  min-height: 60px;
+  background:
+    linear-gradient(135deg, rgba(76,125,255,0.04) 0%, rgba(18,25,42,0.03) 100%);
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-3);
+  font-family: var(--font-body);
+  animation: fadeIn 0.3s var(--ease-out);
+  user-select: none;
+  cursor: default;
+  overflow: hidden;
+}
+.broken-image-placeholder svg {
+  opacity: 0.45;
+  flex-shrink: 0;
+}
+.broken-image-placeholder span {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  opacity: 0.6;
+  text-align: center;
+  line-height: 1.3;
+}

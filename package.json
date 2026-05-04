@@ -1,0 +1,18 @@
+{
+  "name": "huobao-drama-workspace",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"cd backend && bun run dev\" \"cd frontend && bun run dev\"",
+    "start": "concurrently \"cd backend && bun run start\" \"cd frontend && bun run preview\"",
+    "dev:backend": "cd backend && bun run dev",
+    "dev:frontend": "cd frontend && bun run dev",
+    "start:backend": "cd backend && bun run start",
+    "start:frontend": "cd frontend && bun run preview",
+    "build": "concurrently \"cd backend && bun run build\" \"cd frontend && bun run build\"",
+    "build:backend": "cd backend && bun run build",
+    "build:frontend": "cd frontend && bun run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

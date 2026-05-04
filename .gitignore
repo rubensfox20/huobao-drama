@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+package-lock.json
 
 # Build output
 dist/
@@ -18,6 +19,14 @@ dist/
 # Logs
 *.log
 
+# Local recovery / browser artifacts
+.codex-dev/
+.codex-*
+frontend/test-results/
+frontend_chinese*.json
+remaining_chinese*.json
+temp_chinese*.json
+
 # OS
 .DS_Store
 Thumbs.db
@@ -31,6 +40,7 @@ data/huobao_drama.db-wal
 data/huobao_drama.db-shm
 data/public.sql
 data/*.bak*
+data/tmp-*
 data/static/
 data/storage/
 
@@ -41,5 +51,6 @@ configs/config.yaml
 tmp/
 temp/
 .superpowers/
+.claude/settings.local.json
 /CLAUDE.md
 /AGENTS.md

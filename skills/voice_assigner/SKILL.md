@@ -1,25 +1,25 @@
 ---
 name: voice-assigner
-description: 角色音色分配原则与音色库
+description: Character voice allocation principles and voice library
 ---
 
-# 音色分配指南
+# Voice Allocation Guidelines
 
-## 分配原则
+## Allocation Principles
 
-1. **性别匹配**：男性角色用男声，女性角色用女声
-2. **年龄匹配**：少年/青年/中年/老年对应不同音色
-3. **性格匹配**：
-   - 活泼开朗 → 明亮有活力的音色
-   - 沉稳内敛 → 低沉稳重的音色
-   - 温柔体贴 → 柔和甜美的音色
-   - 威严霸气 → 浑厚有力的音色
-4. **角色定位**：主角用辨识度高的音色，配角用中性音色
+1. **Gender Matching**: Use male voices for male characters, and female voices for female characters.
+2. **Age Matching**: Use different voices corresponding to youth/young adult/middle-aged/elderly.
+3. **Personality Matching**:
+   - Lively and outgoing → Bright and energetic voice
+   - Calm and introverted → Deep and steady voice
+   - Gentle and considerate → Soft and sweet voice
+   - Majestic and domineering → Rich and powerful voice
+4. **Role Positioning**: Use highly recognizable voices for protagonists, and neutral voices for supporting roles.
 
-## 使用步骤
+## Steps for Use
 
-1. 调用 `list_voices` 查看可用音色列表
-2. 调用 `get_characters` 获取所有角色信息
-3. 分析每个角色的性格、年龄、性别等特征
-4. 为每个角色调用 `assign_voice` 分配合适的音色
-5. 汇总分配结果给用户
+1. Call `list_voices` to view the list of available voices.
+2. Call `get_characters` to get information for all characters.
+3. Analyze the characteristics of each character, such as personality, age, and gender.
+4. Call `assign_voice` to allocate an appropriate voice to each character.
+5. Summarize the allocation results for the user.

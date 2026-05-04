@@ -1,6 +1,6 @@
-# 镜头画面提示词模板
+# Shot Image Prompt Template
 
-## 模板结构
+## Template Structure
 
 ```
 [Shot type] shot, [camera angle], [art style].
@@ -10,7 +10,7 @@
 Style: cinematic, high quality, [additional style tags].
 ```
 
-## 示例
+## Example
 
 ```
 Medium close-up shot, slightly low angle, cinematic anime style.

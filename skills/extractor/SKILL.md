@@ -1,46 +1,46 @@
 ---
 name: character-scene-extractor
-description: 角色和场景提取的规范与方法
+description: Guidelines and methods for extracting characters and scenes
 ---
 
-# 角色与场景提取指南
+# Character and Scene Extraction Guidelines
 
-## 角色提取规范
+## Character Extraction Specifications
 
-提取的角色信息包含：
-- **姓名**：角色全名
-- **角色定位**：主角/配角/龙套
-- **外貌描写**：性别、年龄、体型、面部特征、发型、着装（300-500字）
-- **性格特点**：核心性格标签
-- **角色描述**：背景故事和关系
+The extracted character information includes:
+- **Name**: The full name of the character
+- **Role Positioning**: Protagonist / Supporting Role / Background Character
+- **Appearance Description**: Gender, age, body type, facial features, hairstyle, clothing (300-500 words)
+- **Personality Traits**: Core personality tags
+- **Character Description**: Background story and relationships
 
-## 场景提取规范
+## Scene Extraction Specifications
 
-提取的场景/背景信息包含：
-- **地点**：具体场所名称
-- **时间**：时间段和光线条件
-- **氛围**：环境氛围描述
-- **提示词**：用于AI图片生成的英文提示词（纯背景，不含人物）
+The extracted scene/background information includes:
+- **Location**: Specific place name
+- **Time**: Time period and lighting conditions
+- **Atmosphere**: Description of the environmental atmosphere
+- **Prompt**: English prompt words for AI image generation (pure background, no characters)
 
-## 道具提取规范
+## Prop Extraction Specifications
 
-提取的道具信息包含：
-- **名称**：道具名
-- **类型**：日常/武器/交通/装饰等
-- **描述**：外观和用途
-- **图片提示词**：用于AI图片生成的英文提示词
+The extracted prop information includes:
+- **Name**: Prop name
+- **Type**: Daily / Weapon / Vehicle / Decoration, etc.
+- **Description**: Appearance and usage
+- **Image Prompt**: English prompt words for AI image generation
 
-## 使用步骤
+## Steps for Use
 
-1. 调用 `read_script_for_extraction` 读取当前集剧本
-2. 调用 `read_existing_characters` 查看项目已有角色和当前集已关联角色
-3. 调用 `read_existing_scenes` 查看项目已有场景和当前集已关联场景
-4. 只提取当前集真实涉及的角色和场景
-5. 调用 `save_dedup_characters` 保存角色并自动关联到当前集
-6. 调用 `save_dedup_scenes` 保存场景并自动关联到当前集
+1. Call `read_script_for_extraction` to read the script of the current episode
+2. Call `read_existing_characters` to view existing characters in the project and characters already linked to the current episode
+3. Call `read_existing_scenes` to view existing scenes in the project and scenes already linked to the current episode
+4. Extract only the characters and scenes actually involved in the current episode
+5. Call `save_dedup_characters` to save characters and automatically link them to the current episode
+6. Call `save_dedup_scenes` to save scenes and automatically link them to the current episode
 
-## 当前集规则
+## Current Episode Rules
 
-- 目标是补齐“当前集”需要的角色和场景，不是重扫整个项目
-- 若角色或场景已在项目中存在但当前集未关联，仍应复用并关联到当前集
-- 若项目中已有同名角色或同地点同时间场景，优先复用，不要重复创建
+- The goal is to fill in the missing characters and scenes needed for the "current episode", not to re-scan the entire project.
+- If a character or scene already exists in the project but is not linked to the current episode, it should still be reused and linked to the current episode.
+- If there is already a character with the same name or a scene with the same location and time in the project, prioritize reusing it and do not create duplicates.

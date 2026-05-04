@@ -7,6 +7,10 @@ services:
       - ./data:/app/data
       - ./configs/config.yaml:/app/configs/config.yaml
     environment:
-      - NODE_ENV=production
-      - PORT=5679
+      NODE_ENV: production
+      PORT: 5679
+      HUOBAO_ADMIN_TOKEN: ${HUOBAO_ADMIN_TOKEN:?Set HUOBAO_ADMIN_TOKEN before starting huobao-drama}
+      HUOBAO_SECRET_KEY: ${HUOBAO_SECRET_KEY:-}
+      HUOBAO_WEBHOOK_TOKEN: ${HUOBAO_WEBHOOK_TOKEN:-}
+      HUOBAO_ALLOW_PRIVATE_DOWNLOADS: ${HUOBAO_ALLOW_PRIVATE_DOWNLOADS:-}
     restart: unless-stopped

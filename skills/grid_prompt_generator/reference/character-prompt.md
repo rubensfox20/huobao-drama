@@ -1,6 +1,6 @@
-# 角色图片提示词模板
+# Character Image Prompt Template
 
-## 模板结构
+## Template Structure
 
 ```
 A [gender] [age] character, [name], [body type], [facial features].
@@ -9,7 +9,7 @@ A [gender] [age] character, [name], [body type], [facial features].
 Style: [art style], high quality, detailed, character concept art.
 ```
 
-## 示例
+## Example
 
 ```
 A young woman in her early 20s, Li Mei, slender build, delicate oval face with bright almond eyes.

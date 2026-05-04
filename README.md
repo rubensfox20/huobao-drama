@@ -116,8 +116,7 @@ Inclui 5 agentes Mastra, com suporte a configuração em banco de dados e extens
 
 | Software    | Versão exigida | Descrição                                  |
 | ----------- | -------------- | ------------------------------------------ |
-| **Node.js** | 20+            | Ambiente de execução do frontend e backend |
-| **npm**     | 9+             | Gerenciador de pacotes                     |
+| **Bun**     | 1.0+           | Runtime e gerenciador de pacotes           |
 | **FFmpeg**  | 4.0+           | Processamento de vídeo (**obrigatório**)   |
 
 #### Instalação do FFmpeg
@@ -190,10 +189,10 @@ git clone https://github.com/chatfire-AI/huobao-drama.git
 cd huobao-drama
 
 # Instalar as dependências do backend
-cd backend && npm install
+cd backend && bun install
 
 # Instalar as dependências do frontend
-cd ../frontend && npm install
+cd ../frontend && bun install
 ```
 
 ### 🎯 Inicialização do projeto
@@ -205,11 +204,11 @@ Frontend e backend separados, com suporte a hot reload:
 ```bash
 # Terminal 1: iniciar o backend
 cd backend
-npm run dev
+bun run dev
 
 # Terminal 2: iniciar o frontend
 cd frontend
-npm run dev
+bun run dev
 ```
 
 * Endereço do frontend: `http://localhost:3013`
@@ -222,10 +221,10 @@ O backend fornece simultaneamente a API e os arquivos estáticos do frontend:
 
 ```bash
 # 1. Gerar o build do frontend
-cd frontend && npm run generate
+cd frontend && bun run generate
 
 # 2. Iniciar o backend
-cd ../backend && npm start
+cd ../backend && bun start
 ```
 
 Acesse: `http://localhost:5679`
@@ -235,7 +234,7 @@ Acesse: `http://localhost:5679`
 As tabelas do banco são criadas automaticamente na primeira inicialização, sem necessidade de migração manual. O caminho padrão é `data/huobao_drama.db`, podendo ser sobrescrito por variável de ambiente:
 
 ```bash
-DB_PATH=/path/to/your.db npm start
+DB_PATH=/path/to/your.db bun start
 ```
 
 ---
@@ -256,6 +255,13 @@ DB_PATH=/path/to/your.db npm start
 
 ```bash
 # Iniciar os serviços
+export HUOBAO_ADMIN_TOKEN="troque-este-token"
+# Recomendado: chave estável para criptografar segredos salvos no SQLite.
+export HUOBAO_SECRET_KEY="troque-esta-chave-longa-e-estavel"
+# Opcional, mas recomendado se usar callbacks Vidu:
+export HUOBAO_WEBHOOK_TOKEN="troque-este-token-de-webhook"
+# Use apenas se provedores confiáveis retornarem URLs privadas/locais:
+# export HUOBAO_ALLOW_PRIVATE_DOWNLOADS=1
 docker compose up -d
 
 # Ver logs
@@ -272,6 +278,9 @@ docker compose down
 docker run -d \
   --name huobao-drama \
   -p 5679:5679 \
+  -e HUOBAO_ADMIN_TOKEN="troque-este-token" \
+  -e HUOBAO_SECRET_KEY="troque-esta-chave-longa-e-estavel" \
+  -e HUOBAO_WEBHOOK_TOKEN="troque-este-token-de-webhook" \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/configs/config.yaml:/app/configs/config.yaml \
   --restart unless-stopped \
@@ -288,6 +297,9 @@ docker logs -f huobao-drama
 ```bash
 docker build -t huobao-drama:latest .
 docker run -d --name huobao-drama -p 5679:5679 \
+  -e HUOBAO_ADMIN_TOKEN="troque-este-token" \
+  -e HUOBAO_SECRET_KEY="troque-esta-chave-longa-e-estavel" \
+  -e HUOBAO_WEBHOOK_TOKEN="troque-este-token-de-webhook" \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/configs/config.yaml:/app/configs/config.yaml \
   huobao-drama:latest
@@ -299,6 +311,14 @@ docker run -d --name huobao-drama -p 5679:5679 \
 * ✅ Frontend e backend combinados em uma única imagem e uma única porta
 * ✅ Consistência de ambiente, evitando problemas de dependência
 * ✅ Montagem do diretório `data/` como volume para persistência de dados
+
+#### 🔐 Segurança de administração e webhooks
+
+Em produção, defina sempre `HUOBAO_ADMIN_TOKEN`. Defina também uma `HUOBAO_SECRET_KEY` longa e estável para criptografar `api_key` e payloads OAuth persistidos no SQLite. Se ela não existir, o backend usa `HUOBAO_ADMIN_TOKEN` como fallback de criptografia, mas trocar esse token depois pode impedir a leitura dos segredos já selados.
+
+Se usar callbacks Vidu, defina também `HUOBAO_WEBHOOK_TOKEN` e configure o callback para enviar esse valor no header `X-Huobao-Webhook-Token`. Se o provedor não permitir headers customizados, use a URL `/webhooks/vidu?token=SEU_TOKEN`.
+
+Downloads remotos de mídia aceitam somente `http`/`https` e bloqueiam hosts privados, reservados ou locais por padrão. Use `HUOBAO_ALLOW_PRIVATE_DOWNLOADS=1` apenas quando o provedor for confiável e precisar retornar URLs internas, como em testes locais.
 
 #### 🔗 Acesso a serviços do host (Ollama / modelos locais)
 
@@ -324,17 +344,17 @@ Dentro do contêiner, é possível acessar serviços do host por meio de `http:/
 
 ```bash
 # 1. Gerar o build do frontend
-cd frontend && npm run generate && cd ..
+cd frontend && bun run generate && cd ..
 
 # 2. Iniciar o backend
-cd backend && npm start
+cd backend && bun start
 ```
 
 Arquivos que precisam ser enviados ao servidor:
 
 ```text
 backend/          # código-fonte do backend + node_modules
-frontend/dist/    # artefatos de build do frontend
+frontend/.output/public/ ou frontend/dist/  # artefatos estáticos do frontend
 configs/config.yaml
 data/             # diretório de dados (criado automaticamente na primeira execução)
 skills/           # arquivos de Skill dos Agents
@@ -362,7 +382,7 @@ server {
 
 ### Backend
 
-* **Runtime**: Node.js 20+
+* **Runtime**: Bun 1.0+
 * **Framework web**: Hono
 * **ORM**: Drizzle ORM + better-sqlite3
 * **AI Agent**: Mastra + AI SDK (compatível com OpenAI)
@@ -394,7 +414,7 @@ R: Verifique se o FFmpeg está instalado e disponível na variável de ambiente 
 
 ### P: O frontend não consegue se conectar à API do backend?
 
-R: Verifique se o backend está em execução e se a porta está correta. No modo de desenvolvimento, a configuração de proxy do frontend fica em `frontend/nuxt.config.ts`.
+R: Verifique se o backend está em execução e se a porta está correta. No modo de desenvolvimento, a configuração de proxy do frontend fica em `frontend/nuxt.config.ts`. Use `bun run dev` para iniciar.
 
 ### P: As tabelas do banco de dados não foram criadas?
 
@@ -462,8 +482,8 @@ Issues e Pull Requests são bem-vindos.
 Comandos úteis para validação:
 
 ```bash
-cd backend && npm run typecheck
-cd ../frontend && npm run build
+cd backend && bun run typecheck
+cd ../frontend && bun run build
 ```
 
 ---

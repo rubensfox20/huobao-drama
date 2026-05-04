@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 ## Project Overview
 
@@ -16,14 +16,18 @@ skills/    — Agent SKILL.md definitions
 
 ## Commands
 
+### Package Manager: Bun
+Use `bun install` instead of `npm install`. Use `bun run <script>` to run scripts.
+Backend runs on Node.js via tsx (better-sqlite3 requires Node's native addon system).
+
 ### Backend (`backend/`)
-- `npm run dev` — Start dev server with tsx watch (port 5679)
-- `npm start` — Start production server
-- `npm run typecheck` — TypeScript type checking
+- `bun run dev` — Start dev server with tsx watch (port 5679)
+- `bun start` — Start production server
+- `bun run typecheck` — TypeScript type checking
 
 ### Frontend (`frontend/`)
-- `npm run dev` — Vite dev server (port 3013, proxies /api to 5679)
-- `npm run build` — Production build
+- `bun run dev` — Nuxt dev server (port 3013, proxies /api to 5679)
+- `bun run build` — Production build
 
 ## Architecture
 

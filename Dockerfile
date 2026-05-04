@@ -1,11 +1,11 @@
 # ── Stage 1: Build frontend ──────────────────────────────────
-FROM node:20-slim AS frontend-build
+FROM oven/bun:1 AS frontend-build
 
 WORKDIR /app/frontend
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+COPY frontend/package.json frontend/bun.lock ./
+RUN bun install --frozen-lockfile
 COPY frontend/ ./
-RUN npm run generate
+RUN bun run generate
 
 # ── Stage 2: Build backend native modules ────────────────────
 FROM node:20-slim AS backend-build
@@ -14,11 +14,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 
+# Install bun for package management
+RUN npm i -g bun
+
 WORKDIR /app/backend
-COPY backend/package.json backend/package-lock.json ./
+COPY backend/package.json backend/bun.lock ./
 
 # Production deps only (native modules compiled here)
-RUN npm ci --omit=dev
+RUN bun install --frozen-lockfile --production
 
 # ── Stage 3: Production image (lean) ────────────────────────
 FROM node:20-slim
@@ -32,7 +35,7 @@ WORKDIR /app
 
 # Pre-built node_modules (production only, native modules ready)
 COPY --from=backend-build /app/backend/node_modules ./backend/node_modules
-COPY backend/package.json backend/package-lock.json ./backend/
+COPY backend/package.json ./backend/
 
 # Backend source
 COPY backend/src ./backend/src
@@ -42,7 +45,7 @@ COPY backend/tsconfig.json ./backend/
 COPY --from=frontend-build /app/frontend/.output/public ./frontend/dist
 
 # Skills
-COPY skills/ ./backend/skills/
+COPY skills/ ./skills/
 
 # Config
 COPY configs/config.example.yaml ./configs/config.yaml

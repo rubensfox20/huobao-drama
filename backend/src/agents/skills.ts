@@ -43,9 +43,9 @@ export function loadAgentSkills(agentType: string): string {
   if (!contents.length) return ''
 
   return [
-    '以下是该 Agent 专属的项目技能规范（SKILL.md）。',
-    '不同 Agent 会加载不同 skill；你只需要遵守当前注入的这些技能。',
-    '你必须在不违背当前工具边界的前提下优先遵守这些规范；若与用户明确要求冲突，以用户要求为准。',
+    'Here is the project skill specification (SKILL.md) exclusive to this Agent.',
+    'Different Agents will load different skills; you only need to follow the currently injected skills.',
+    'You must prioritize these specifications without violating the tool boundaries; if they conflict with explicit user requirements, follow the user requirements.',
     '',
     contents.join('\n\n'),
   ].join('\n')

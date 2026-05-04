@@ -1,12 +1,10 @@
-/**
- * 剧本改写 Agent 工具
- * 工厂函数模式 — 注入 episodeId，工具不再需要 LLM 传递 ID
- */
+
 import { createTool } from '@mastra/core/tools'
 import { z } from 'zod'
 import { db, schema } from '../../db/index.js'
 import { eq } from 'drizzle-orm'
 import { now } from '../../utils/response.js'
+import { buildAllowedSpeakerHint, sanitizeRewrittenScript } from '../../services/script-sanitizer.js'
 
 export function createScriptTools(episodeId: number) {
   const readEpisodeScript = createTool({
@@ -38,17 +36,27 @@ export function createScriptTools(episodeId: number) {
 
       return {
         source_content: source,
-        instruction: `请将以下内容改写为格式化剧本。
+        instruction: `Rewrite the source below into a structured screenplay in Brazilian Portuguese.
 
-格式规范：
-- 场景头：## S编号 | 内景/外景 · 地点 | 时间段
-- 动作描写：自然段落，不包含镜头语言
-- 对白：角色名：（状态/表情）台词内容
-- 每个场景 30-60 秒内容
+Format:
+- Scene header: ## S<number> | Interior/Exterior · Location | Time period
+- Action: natural prose paragraphs, no camera jargon
+- Dialogue: Character Name: (emotion/state) spoken line
+- Each scene should roughly cover 30 to 60 seconds
+
+Rules:
+- Preserve canonical proper names and source facts exactly
+- Do not invent new named characters
+- Use dialogue only for source-grounded named characters who are clearly active in the scene
+- If a person is unnamed in the source, keep that presence inside action prose only
+- Do not create labels such as "Marinheiro", "Oficial 1", or "Voice of the Officer"
+- Do not use markdown, bold text, bullet lists, or closing markers such as "FIM DO ROTEIRO"
+- ${buildAllowedSpeakerHint(source)}
+- When finished, call save_script with the complete final screenplay
 
 ${instructions || ''}
 
-【原始内容】
+Source content:
 ${source}`,
       }
     },
@@ -61,11 +69,15 @@ ${source}`,
       content: z.string().describe('The formatted screenplay content to save'),
     }),
     execute: async ({ content }) => {
+      const [ep] = db.select().from(schema.episodes)
+        .where(eq(schema.episodes.id, episodeId)).all()
+      const source = ep?.content || ep?.scriptContent || ''
+      const sanitizedContent = sanitizeRewrittenScript(content, source)
       db.update(schema.episodes)
-        .set({ scriptContent: content, updatedAt: now() })
+        .set({ scriptContent: sanitizedContent, updatedAt: now() })
         .where(eq(schema.episodes.id, episodeId))
         .run()
-      return { message: `Script saved`, word_count: content.length }
+      return { message: `Script saved`, word_count: sanitizedContent.length }
     },
   })
 

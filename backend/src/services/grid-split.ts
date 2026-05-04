@@ -2,7 +2,7 @@ import sharp from 'sharp'
 import fs from 'fs'
 import path from 'path'
 import { now } from '../utils/response.js'
-import { getAbsolutePath } from '../utils/storage.js'
+import { getAbsolutePath, resolveStoragePath } from '../utils/storage.js'
 
 const DATA_DIR = getAbsolutePath('grid-cells')
 
@@ -16,9 +16,7 @@ export async function splitGridImage(
   rows: number,
   cols: number,
 ): Promise<SplitResult[]> {
-  const absPath = imagePath.startsWith('/')
-    ? imagePath
-    : getAbsolutePath(imagePath)
+  const absPath = resolveStoragePath(imagePath)
 
   const image = sharp(absPath)
   const meta = await image.metadata()

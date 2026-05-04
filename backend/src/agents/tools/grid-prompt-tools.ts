@@ -1,12 +1,4 @@
-/**
- * 图片提示词生成 Agent 工具
- * 工厂函数模式 — 注入 episodeId + dramaId
- *
- * 支持三类提示词生成：
- * 1. 角色图片提示词
- * 2. 场景图片提示词
- * 3. 宫格图提示词
- */
+
 import { createTool } from '@mastra/core/tools'
 import { z } from 'zod'
 import { db, schema } from '../../db/index.js'
@@ -14,11 +6,11 @@ import { eq } from 'drizzle-orm'
 
 export function createGridPromptTools(episodeId: number, dramaId: number) {
 
-  // ─── 角色提示词 ───────────────────────────────────────
+
 
   const readCharacters = createTool({
     id: 'read_characters',
-    description: '读取当前剧集中的所有角色信息，用于生成角色图片提示词。',
+    description: 'Read all character information in the current episode to generate character image prompts.',
     inputSchema: z.object({}),
     execute: async () => {
       const chars = db.select().from(schema.characters)
@@ -39,7 +31,7 @@ export function createGridPromptTools(episodeId: number, dramaId: number) {
 
   const generateCharacterPrompt = createTool({
     id: 'generate_character_prompt',
-    description: '为角色生成 AI 图片生成的英文提示词。',
+    description: 'Generate English prompts for AI image generation for characters.',
     inputSchema: z.object({
       character_id: z.number(),
     }),
@@ -65,11 +57,11 @@ export function createGridPromptTools(episodeId: number, dramaId: number) {
     },
   })
 
-  // ─── 场景提示词 ───────────────────────────────────────
+
 
   const readScenes = createTool({
     id: 'read_scenes',
-    description: '读取当前剧集中的所有场景信息，用于生成场景图片提示词。',
+    description: 'Read all scene information in the current episode to generate scene image prompts.',
     inputSchema: z.object({}),
     execute: async () => {
       const scenes = db.select().from(schema.scenes)
@@ -88,7 +80,7 @@ export function createGridPromptTools(episodeId: number, dramaId: number) {
 
   const generateScenePrompt = createTool({
     id: 'generate_scene_prompt',
-    description: '为场景生成 AI 图片生成的英文提示词。',
+    description: 'Generate English prompts for AI image generation for scenes.',
     inputSchema: z.object({
       scene_id: z.number(),
     }),
@@ -113,11 +105,11 @@ export function createGridPromptTools(episodeId: number, dramaId: number) {
     },
   })
 
-  // ─── 宫格图提示词 ───────────────────────────────────────
+
 
   const readShotsForGrid = createTool({
     id: 'read_shots_for_grid',
-    description: '读取选中镜头的详细信息，用于生成宫格图提示词。',
+    description: 'Read detailed information of selected shots to generate grid image prompts.',
     inputSchema: z.object({
       shot_ids: z.array(z.number()),
     }),
@@ -140,7 +132,7 @@ export function createGridPromptTools(episodeId: number, dramaId: number) {
 
   const generateGridPrompt = createTool({
     id: 'generate_grid_prompt',
-    description: '为宫格图生成整体画面描述和每个格子的独立提示词。遵循 grid-image-generator SKILL.md 的三种模式规范。',
+    description: 'Generate an overall description and individual cell prompts for the grid image. Follow the three mode specifications of grid-image-generator SKILL.md.',
     inputSchema: z.object({
       shots: z.array(z.object({
         shot_number: z.number(),
@@ -158,7 +150,7 @@ export function createGridPromptTools(episodeId: number, dramaId: number) {
     execute: async ({ shots, rows, cols, mode, reference_legend }) => {
       if (!shots.length) return { error: 'No shots provided', grid_prompt: '', cell_prompts: [] }
       const totalCells = rows * cols
-      const legendPrefix = reference_legend ? `参考图映射：${reference_legend}, ` : ''
+      const legendPrefix = reference_legend ? `Reference map: ${reference_legend}, ` : ''
 
       if (mode === 'multi_ref') {
         const sb = shots[0]
@@ -166,7 +158,7 @@ export function createGridPromptTools(episodeId: number, dramaId: number) {
         const cellPrompts = Array.from({ length: totalCells }, (_, i) => ({
           shot_number: sb.shot_number,
           frame_type: 'reference',
-          prompt: `格${i + 1}：${reference_legend ? `参考${reference_legend}，` : ''}${sb.description}, cinematic lighting, consistent with other cells in the ${rows}x${cols} grid`,
+          prompt: `Cell ${i + 1}: ${reference_legend ? `Ref ${reference_legend}, ` : ''}${sb.description}, cinematic lighting, consistent with other cells in the ${rows}x${cols} grid`,
         }))
         return { grid_prompt: gridPrompt, cell_prompts: cellPrompts }
       }
@@ -180,8 +172,8 @@ export function createGridPromptTools(episodeId: number, dramaId: number) {
             shot_number: s.shot_number,
             frame_type: isFirst ? 'first_frame' : 'last_frame',
             prompt: isFirst
-              ? `格${i + 1}：${reference_legend ? `参考${reference_legend}，` : ''}${s.description}${s.location ? `, ${s.location}` : ''}${s.shot_type ? `, ${s.shot_type}` : ''}, opening scene`
-              : `格${i + 1}：${reference_legend ? `参考${reference_legend}，` : ''}${s.description}${s.location ? `, ${s.location}` : ''}${s.shot_type ? `, ${s.shot_type}` : ''}, ending scene, continuous motion`,
+              ? `Cell ${i + 1}: ${reference_legend ? `Ref ${reference_legend}, ` : ''}${s.description}${s.location ? `, ${s.location}` : ''}${s.shot_type ? `, ${s.shot_type}` : ''}, opening scene`
+              : `Cell ${i + 1}: ${reference_legend ? `Ref ${reference_legend}, ` : ''}${s.description}${s.location ? `, ${s.location}` : ''}${s.shot_type ? `, ${s.shot_type}` : ''}, ending scene, continuous motion`,
           })
         }
         const gridPrompt = `${rows}x${cols} grid layout, exactly ${totalCells} visible panels, consistent art style, cinematic quality, ${legendPrefix}${shots.map(s => s.description).join(' | ')}, no merged panels, no missing panels, no text, no watermark`
@@ -194,7 +186,7 @@ export function createGridPromptTools(episodeId: number, dramaId: number) {
         return {
           shot_number: s.shot_number,
           frame_type: 'first_frame',
-          prompt: `格${i + 1}：${reference_legend ? `参考${reference_legend}，` : ''}${s.description}${s.location ? `, ${s.location}` : ''}${s.shot_type ? `, ${s.shot_type}` : ''}, opening scene`,
+          prompt: `Cell ${i + 1}: ${reference_legend ? `Ref ${reference_legend}, ` : ''}${s.description}${s.location ? `, ${s.location}` : ''}${s.shot_type ? `, ${s.shot_type}` : ''}, opening scene`,
         }
       })
       const gridPrompt = `${rows}x${cols} grid layout, exactly ${totalCells} visible panels, consistent art style, cinematic quality, ${legendPrefix}${shots.map(s => s.description).join(' | ')}, no merged panels, no missing panels, no text, no watermark`

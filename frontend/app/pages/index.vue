@@ -11073,11 +11073,10 @@ onBeforeUnmount(() => {
   z-index: 1;
   box-sizing: border-box;
   min-width: 0;
-  min-height: 184px;
   display: block;
   appearance: none;
   -webkit-appearance: none;
-  padding: 3px 3px 19px;
+  padding: 4px 4px 14px;
   border: 0;
   border-radius: 20px;
   background: #fff;

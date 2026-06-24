@@ -136,7 +136,24 @@
           </nav>
 
           <div v-if="(activeProductionTab === 'objects' || activeProductionTab === 'media') && !activeProductionItems.length" class="production-empty-library">
-            <button class="library-create-card" type="button" @click="createProductionNode(activeProductionTab)"><Plus :size="27" /></button>
+            <div class="library-create-wrapper empty-create-wrapper">
+              <button class="library-create-card" type="button" @click.stop="showLibraryCreateMenu = !showLibraryCreateMenu"><Plus :size="27" /></button>
+              <div v-if="showLibraryCreateMenu" class="dropdown-overlay" @click.stop="showLibraryCreateMenu = false"></div>
+              <div v-if="showLibraryCreateMenu" class="library-create-dropdown" style="top: 140px; left: 50%; transform: translateX(-50%);">
+                <button type="button" @click="createProductionNode(activeProductionTab); showLibraryCreateMenu = false">
+                  <UploadCloud :size="16" />
+                  <span>Fazer upload de arquivo local</span>
+                </button>
+                <button type="button" @click="createProductionNode(activeProductionTab); showLibraryCreateMenu = false">
+                  <Folder :size="16" />
+                  <span>Escolher da biblioteca de assets</span>
+                </button>
+                <button type="button" @click="createProductionNode(activeProductionTab); showLibraryCreateMenu = false">
+                  <Image :size="16" />
+                  <span>Criar no canvas</span>
+                </button>
+              </div>
+            </div>
             <span>{{ activeProductionTab === 'objects' ? 'Novo objeto' : 'Nova midia' }}</span>
             <div>
               <h2>{{ activeProductionTab === 'objects' ? 'Ainda nao ha objetos' : 'No material yet' }}</h2>
@@ -145,12 +162,29 @@
           </div>
 
           <div v-else class="production-library-grid" :class="'library-' + activeProductionTab">
-            <button v-if="activeProductionTab === 'objects' || activeProductionTab === 'media'" class="library-asset-card library-inline-create" type="button" @click="createProductionNode(activeProductionTab)">
-              <div class="library-asset-preview library-create-preview">
-                <div class="dashed-circle"><Plus :size="22" /></div>
+            <div v-if="activeProductionTab === 'objects' || activeProductionTab === 'media'" class="library-create-wrapper inline-create-wrapper">
+              <button class="library-asset-card library-inline-create" type="button" @click.stop="showLibraryCreateMenu = !showLibraryCreateMenu">
+                <div class="library-asset-preview library-create-preview">
+                  <div class="dashed-circle"><Plus :size="22" /></div>
+                </div>
+                <strong>{{ activeProductionTab === 'objects' ? 'Novo objeto' : 'Nova mídia' }}</strong>
+              </button>
+              <div v-if="showLibraryCreateMenu" class="dropdown-overlay" @click.stop="showLibraryCreateMenu = false"></div>
+              <div v-if="showLibraryCreateMenu" class="library-create-dropdown">
+                <button type="button" @click="createProductionNode(activeProductionTab); showLibraryCreateMenu = false">
+                  <UploadCloud :size="16" />
+                  <span>Fazer upload de arquivo local</span>
+                </button>
+                <button type="button" @click="createProductionNode(activeProductionTab); showLibraryCreateMenu = false">
+                  <Folder :size="16" />
+                  <span>Escolher da biblioteca de assets</span>
+                </button>
+                <button type="button" @click="createProductionNode(activeProductionTab); showLibraryCreateMenu = false">
+                  <Image :size="16" />
+                  <span>Criar no canvas</span>
+                </button>
               </div>
-              <strong>{{ activeProductionTab === 'objects' ? 'Novo objeto' : 'Nova mídia' }}</strong>
-            </button>
+            </div>
             <button v-for="(item, index) in activeProductionItems" :key="'lib-' + activeProductionTab + '-' + index" class="library-asset-card" type="button" @click="selectProductionLibraryAsset(item, index)">
               <div class="library-asset-preview">
                 <img v-if="productionAssetImageSource(item)" :src="productionAssetImageSource(item)" :alt="item.name" />
@@ -1630,6 +1664,7 @@ const deletingProjects = ref(false)
 const activeComposer = ref('upload')
 const showPaste = ref(false)
 const showAccountMenu = ref(false)
+const showLibraryCreateMenu = ref(false)
 const showLanguageMenu = ref(false)
 const showHelp = ref(false)
 const showDeleteConfirm = ref(false)
@@ -11200,6 +11235,58 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   color: #939aa1;
 }
+
+.library-create-wrapper {
+  position: relative;
+}
+
+.dropdown-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 59;
+}
+
+.library-create-dropdown {
+  position: absolute;
+  top: 90px;
+  left: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  width: 260px;
+  padding: 8px 0;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.library-create-dropdown button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 18px;
+  border: 0;
+  background: transparent;
+  color: #1f2429;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.library-create-dropdown button:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.library-create-dropdown button svg {
+  color: #4a5157;
+}
+
 
 @media (max-width: 620px) {
   .production-library-panel {

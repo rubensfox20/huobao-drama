@@ -11039,9 +11039,23 @@ onBeforeUnmount(() => {
   left: 82px;
   width: min(464px, calc(100vw - 106px));
   height: min(572px, calc(100vh - 78px));
-  overflow: visible;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 22px 22px 24px;
   border-radius: 36px;
+}
+
+.production-library-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.production-library-panel::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+}
+
+.production-library-panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .production-library-tabs {
@@ -11094,29 +11108,11 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-content: start;
   gap: 12px 14px;
-  max-height: calc(100% - 54px);
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 12px;
-  margin: -12px;
-  padding-bottom: 32px;
+  overflow: visible;
 }
 
 .production-library-grid.library-scenes {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.production-library-grid::-webkit-scrollbar {
-  width: 6px;
-}
-
-.production-library-grid::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
-}
-
-.production-library-grid::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
 }
 
 .library-asset-card {

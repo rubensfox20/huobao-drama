@@ -11063,7 +11063,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 24px;
-  margin-bottom: 22px;
+  margin-bottom: 0;
   padding: 22px 22px 0;
   flex-shrink: 0;
   overflow-x: auto;
@@ -11114,7 +11114,7 @@ onBeforeUnmount(() => {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 22px 24px;
+  padding: 22px 22px 24px;
 }
 
 .production-library-grid::-webkit-scrollbar {
@@ -11332,11 +11332,12 @@ onBeforeUnmount(() => {
   .production-library-tabs {
     gap: 18px;
     padding: 20px 18px 0;
+    margin-bottom: 0;
   }
 
   .production-library-grid,
   .production-empty-library {
-    padding: 0 18px 22px;
+    padding: 20px 18px 22px;
   }
 
   .production-library-grid,
@@ -11353,7 +11354,7 @@ onBeforeUnmount(() => {
   align-items: start;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 22px 24px;
+  padding: 22px 22px 24px;
 }
 
 .library-create-card {

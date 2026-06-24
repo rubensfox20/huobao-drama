@@ -10876,7 +10876,7 @@ onBeforeUnmount(() => {
   top: 398px;
   left: 82px;
   width: 180px;
-  padding: 14px;
+  padding: 8px;
   border-radius: 22px;
 }
 
@@ -10886,11 +10886,20 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+  padding: 0 12px;
   border: 0;
+  border-radius: 14px;
   background: transparent;
   color: #1f2429;
   cursor: pointer;
   font-size: 14px;
+  transition: background 0.16s ease;
+}
+
+.screen-help-menu button:hover,
+.screen-help-menu button:focus-visible {
+  background: #eef0f2;
+  outline: 0;
 }
 
 .canvas-context-menu {

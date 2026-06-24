@@ -14283,4 +14283,80 @@ onBeforeUnmount(() => {
     padding-left: 24px;
   }
 }
+
+.shortcuts-overlay {
+  z-index: 100;
+  display: grid;
+  place-items: center;
+}
+
+.shortcuts-modal {
+  background: #fff;
+  border-radius: 20px;
+  padding: 32px 40px;
+  max-width: 800px;
+  width: 90%;
+  position: relative;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+}
+
+.shortcuts-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: transparent;
+  border: 0;
+  color: #7b848c;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.shortcuts-close:hover {
+  color: #1f252a;
+}
+
+.shortcuts-grid {
+  display: flex;
+  gap: 40px;
+}
+
+.shortcuts-column {
+  flex: 1;
+}
+
+.shortcuts-column h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f252a;
+  margin: 0 0 20px;
+}
+
+.shortcut-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.shortcut-item span {
+  font-size: 14px;
+  color: #555c63;
+  font-weight: 500;
+}
+
+.shortcut-keys {
+  display: flex;
+  gap: 6px;
+}
+
+.shortcut-keys kbd {
+  background: #f4f6f8;
+  border: 1px solid #dfe3e8;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 600;
+  color: #1f252a;
+}
 </style>

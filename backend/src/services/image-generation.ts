@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 import { db, schema } from '../db/index.js'
 import { getActiveConfig, getConfigById } from './ai.js'
 import { now } from '../utils/response.js'
@@ -10,6 +10,9 @@ import { sanitizeVisualPrompt } from './storyboard-prompts.js'
 import { buildAssetGenerationCacheKey, findAssetGenerationCacheByKey, touchAssetGenerationCache, upsertAssetGenerationCache } from './asset-generation-cache.js'
 import { completeWorkflowJob, createWorkflowJob, failWorkflowJob, startWorkflowJob } from './workflow-jobs.js'
 import { runProviderOperation } from './provider-execution.js'
+import { reportProviderOperationFailure } from './provider-governor.js'
+import { getOpenAICodexResolvedCredential, invalidateOpenAICodexCredential } from './provider-connections/openai-codex.js'
+import { OPENAI_CODEX_BASE_URL } from './provider-connections/shared.js'
 
 interface GenerateImageParams {
   storyboardId?: number
@@ -27,6 +30,15 @@ interface GenerateImageParams {
   workflowJobId?: number
 }
 
+const MAX_REFERENCE_IMAGES = readPositiveIntEnv('IMAGE_REFERENCE_LIMIT', 4)
+const REFERENCE_IMAGE_MAX_DIMENSION = readPositiveIntEnv('IMAGE_REFERENCE_MAX_DIMENSION', 512)
+const REFERENCE_IMAGE_QUALITY = readPositiveIntEnv('IMAGE_REFERENCE_QUALITY', 58)
+
+function readPositiveIntEnv(name: string, fallback: number) {
+  const value = Number(process.env[name])
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback
+}
+
 export async function generateImage(params: GenerateImageParams): Promise<{ id: number; workflowJobId: number; cacheHit: boolean }> {
   const ts = now()
   const prompt = sanitizeVisualPrompt(params.prompt)
@@ -37,10 +49,10 @@ export async function generateImage(params: GenerateImageParams): Promise<{ id: 
     || (params.sceneId
       ? db.select({ episodeId: schema.scenes.episodeId }).from(schema.scenes).where(eq(schema.scenes.id, params.sceneId)).all()[0]?.episodeId
       : undefined)
-  const config = params.configId
-    ? getConfigById(params.configId)
-    : getActiveConfig('image')
+  const config = resolveImageConfig(params.configId, params.model)
   if (!config) throw new Error('No active image AI config')
+  const model = resolveImageModel(config, params.model)
+  assertOpenAICodexImageNotInPersistedCooldown(config.provider)
 
   const seedJob = params.workflowJobId
     ? { id: params.workflowJobId }
@@ -51,7 +63,7 @@ export async function generateImage(params: GenerateImageParams): Promise<{ id: 
       dramaId: params.dramaId ?? null,
       episodeId: resolvedEpisodeId ?? null,
       provider: config.provider,
-      model: params.model || config.model,
+      model,
       inputSummary: prompt.slice(0, 200),
       metadata: {
         storyboardId: params.storyboardId,
@@ -62,12 +74,12 @@ export async function generateImage(params: GenerateImageParams): Promise<{ id: 
       },
     })
   const workflowJobId = Number(seedJob?.id)
-  startWorkflowJob(workflowJobId, { provider: config.provider, model: params.model || config.model })
+  startWorkflowJob(workflowJobId, { provider: config.provider, model })
 
   const cacheKey = buildAssetGenerationCacheKey({
     assetType: 'image',
     provider: config.provider || 'unknown',
-    model: params.model || config.model || '',
+    model,
     prompt,
     inputs: {
       storyboardId: params.storyboardId,
@@ -89,7 +101,7 @@ export async function generateImage(params: GenerateImageParams): Promise<{ id: 
       sceneId: params.sceneId,
       characterId: params.characterId,
       prompt,
-      model: params.model || config.model,
+      model,
       provider: config.provider,
       size: params.size || '1920x1080',
       seed: params.seed ?? null,
@@ -118,7 +130,7 @@ export async function generateImage(params: GenerateImageParams): Promise<{ id: 
     sceneId: params.sceneId,
     characterId: params.characterId,
     prompt,
-    model: params.model || config.model,
+    model,
     provider: config.provider,
     size: params.size || '1920x1080',
     seed: params.seed ?? null,
@@ -138,7 +150,7 @@ export async function generateImage(params: GenerateImageParams): Promise<{ id: 
     sceneId: params.sceneId,
     characterId: params.characterId,
     frameType: params.frameType,
-    model: params.model || config.model,
+    model,
     workflowJobId,
   })
   logTaskPayload('ImageTask', 'enqueue params', {
@@ -157,6 +169,160 @@ export async function generateImage(params: GenerateImageParams): Promise<{ id: 
     console.error(`Image generation ${lastId} failed:`, err)
   })
   return { id: lastId, workflowJobId, cacheHit: false }
+}
+
+function assertOpenAICodexImageNotInPersistedCooldown(provider: string) {
+  if (String(provider || '').toLowerCase() !== 'openai-codex') return
+
+  const nowMs = Date.now()
+  const recentFailures = db.select({
+    id: schema.imageGenerations.id,
+    errorMsg: schema.imageGenerations.errorMsg,
+    createdAt: schema.imageGenerations.createdAt,
+  })
+    .from(schema.imageGenerations)
+    .where(eq(schema.imageGenerations.provider, 'openai-codex'))
+    .orderBy(desc(schema.imageGenerations.id))
+    .limit(80)
+    .all()
+    .filter(row => String(row.errorMsg || '').trim())
+
+  const resetMs = recentFailures
+    .map(row => extractResetTimeMsFromMessage(String(row.errorMsg || ''), nowMs))
+    .find(value => value > nowMs)
+  if (resetMs) {
+    throw new Error(`OpenAI Codex atingiu o limite de geração de imagem. Tente novamente apos ${new Date(resetMs).toLocaleString('pt-BR')}.`)
+  }
+
+}
+
+function extractResetTimeMsFromMessage(message: string, nowMs: number) {
+  const resetsAt = String(message).match(/"?resets_at"?\s*:\s*(\d{10,13})/i)?.[1]
+  if (resetsAt) {
+    const value = Number(resetsAt)
+    const ms = value > 10_000_000_000 ? value : value * 1000
+    if (Number.isFinite(ms) && ms > nowMs) return ms
+  }
+
+  const resetsIn = String(message).match(/"?resets_in_seconds"?\s*:\s*(\d+)/i)?.[1]
+  if (resetsIn) {
+    const seconds = Number(resetsIn)
+    if (Number.isFinite(seconds) && seconds > 0) return nowMs + seconds * 1000
+  }
+
+  return 0
+}
+
+function getImageConfigById(configId: number): AIConfig | null {
+  const [row] = db.select().from(schema.aiServiceConfigs).where(eq(schema.aiServiceConfigs.id, configId)).all()
+  if (!row) return null
+
+  const provider = String(row.provider || '').toLowerCase()
+  if (provider === 'openai-codex') return getCodexImageConfigFromLogin(parseModelList(row.model) || 'gpt-5.5')
+  if (!row.isActive) return null
+
+  const serviceType = String(row.serviceType || '').toLowerCase()
+  if (serviceType !== 'image') return null
+
+  const config = getConfigById(configId)
+  if (!config) return null
+  if (isKnownNonImageModel(config.provider, config.model)) return null
+  return config
+}
+
+function resolveImageConfig(configId?: number, requestedModel?: string): AIConfig | null {
+  const [explicitRow] = configId
+    ? db.select().from(schema.aiServiceConfigs).where(eq(schema.aiServiceConfigs.id, configId)).all()
+    : []
+  const explicitProvider = String(explicitRow?.provider || '').toLowerCase()
+  const model = String(requestedModel || parseModelList(explicitRow?.model) || '').trim()
+
+  if (explicitProvider === 'openai-codex' || isCodexImageModel(model)) {
+    return getCodexImageConfigFromLogin(model || 'gpt-5.5')
+  }
+
+  const codexConfig = getPreferredCodexImageConfig()
+  if (codexConfig) return codexConfig
+
+  return configId
+    ? getImageConfigById(configId) || getActiveImageConfig()
+    : getActiveImageConfig()
+}
+
+function parseModelList(raw: string | null | undefined) {
+  if (!raw) return ''
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? String(parsed[0] || '') : String(parsed || '')
+  } catch {
+    return String(raw)
+  }
+}
+
+function isCodexImageModel(model: string) {
+  return /^gpt-5(?:\.|-|$)/i.test(String(model || '').trim())
+}
+
+function isKnownNonImageModel(provider: string, model: string) {
+  const normalizedProvider = String(provider || '').toLowerCase()
+  const normalizedModel = String(model || '').toLowerCase()
+  return normalizedProvider === 'huggingface' && /\b(?:wan|i2v|t2v|video)\b/.test(normalizedModel)
+}
+
+function resolveImageModel(config: AIConfig, requestedModel?: string) {
+  const provider = String(config.provider || '').toLowerCase()
+  const requested = String(requestedModel || '').trim()
+  if (provider === 'openai-codex') {
+    return requested.toLowerCase().startsWith('gpt-') ? requested : (config.model || 'gpt-5.5')
+  }
+  return requested || config.model
+}
+
+function getActiveImageConfig(): AIConfig | null {
+  const codexConfig = getPreferredCodexImageConfig()
+  if (codexConfig) return codexConfig
+
+  const imageRows = db.select().from(schema.aiServiceConfigs)
+    .where(eq(schema.aiServiceConfigs.serviceType, 'image'))
+    .all()
+    .filter(row => row.isActive)
+    .sort((a, b) => (b.priority || 0) - (a.priority || 0))
+
+  for (const row of imageRows) {
+    const imageConfig = getImageConfigById(row.id)
+    if (imageConfig) return imageConfig
+  }
+
+  return null
+}
+
+function getPreferredCodexImageConfig(): AIConfig | null {
+  const codexCredential = getOpenAICodexResolvedCredential()
+  if (codexCredential) return getCodexImageConfigFromLogin('gpt-5.5')
+
+  const codexRows = db.select().from(schema.aiServiceConfigs).all()
+    .filter(row => row.isActive && String(row.provider || '').toLowerCase() === 'openai-codex')
+    .sort((a, b) => (b.priority || 0) - (a.priority || 0))
+
+  if (codexRows[0]) {
+    return getCodexImageConfigFromLogin(parseModelList(codexRows[0].model) || 'gpt-5.5')
+  }
+
+  return null
+}
+
+function getCodexImageConfigFromLogin(model = 'gpt-5.5'): AIConfig {
+  const codexCredential = getOpenAICodexResolvedCredential()
+  if (!codexCredential) {
+    throw new Error('OpenAI Codex sem login ativo. Abra Configuracoes > Conexoes e conecte o Codex pelo navegador.')
+  }
+
+  return {
+    provider: 'openai-codex',
+    baseUrl: OPENAI_CODEX_BASE_URL,
+    apiKey: codexCredential.accessToken,
+    model: model || 'gpt-5.5',
+  }
 }
 
 async function processImageGeneration(id: number, config: AIConfig, workflowJobId: number, cacheKey: string) {
@@ -208,14 +374,23 @@ async function processImageGeneration(id: number, config: AIConfig, workflowJobI
       operation: 'generate',
       requestHash: cacheKey,
       metadata: { generationId: id, url: redactUrl(url) },
-    }, async () => fetch(url, {
-      method,
-      headers,
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(600_000),
-    }))
-
-    if (!resp.ok) throw new Error(`API error ${resp.status}: ${await resp.text()}`)
+    }, async () => {
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(600_000),
+      })
+      if (!response.ok) {
+        const errorBody = await response.text()
+        if (isCodexTokenRevoked(config.provider, response.status, errorBody)) {
+          invalidateOpenAICodexCredential(errorBody)
+          throw new Error('Login do OpenAI Codex expirou ou foi revogado. Conecte o Codex novamente em Configuracoes > Conexoes e tente gerar a imagem de novo.')
+        }
+        throw new Error(`API error ${response.status}: ${errorBody}`)
+      }
+      return response
+    })
     const contentType = String(resp.headers.get('content-type') || '').toLowerCase()
 
     if (contentType.startsWith('image/') || contentType.includes('application/octet-stream')) {
@@ -227,11 +402,14 @@ async function processImageGeneration(id: number, config: AIConfig, workflowJobI
       return
     }
 
-    const result = await resp.json() as any
+    const rawText = await resp.text()
+    const result = isProviderEventStream(contentType, rawText)
+      ? parseProviderEventStream(rawText)
+      : JSON.parse(rawText) as any
     logTaskPayload('ImageTask', 'response payload', {
       id,
       provider: config.provider,
-      result,
+      result: summarizeProviderResultForLog(result),
     })
 
     const { isAsync, taskId, imageUrl } = adapter.parseGenerateResponse(result)
@@ -263,6 +441,9 @@ async function processImageGeneration(id: number, config: AIConfig, workflowJobI
     logTaskProgress('ImageTask', 'poll-start', { id, taskId, provider: config.provider })
     pollImageTask(id, config, taskId!, workflowJobId, cacheKey)
   } catch (err: any) {
+    if (isCodexImageToolUnavailableError(config.provider, err.message)) {
+      reportProviderOperationFailure(config.provider, 'generate', err.message, null)
+    }
     logTaskError('ImageTask', 'process', { id, provider: config.provider, error: err.message })
     db.update(schema.imageGenerations)
       .set({ status: 'failed', errorMsg: err.message, updatedAt: now() })
@@ -270,6 +451,80 @@ async function processImageGeneration(id: number, config: AIConfig, workflowJobI
       .run()
     failWorkflowJob(workflowJobId, err.message, { metadata: { generationId: id } })
   }
+}
+
+function isCodexTokenRevoked(provider: string, status: number, body: string) {
+  return String(provider || '').toLowerCase() === 'openai-codex'
+    && status === 401
+    && /token_revoked|invalidated oauth token/i.test(body)
+}
+
+function isCodexImageToolUnavailableError(provider: string, message: string) {
+  return String(provider || '').toLowerCase() === 'openai-codex'
+    && /no image-generation tool is available|sem uma ferramenta de gera..o de imagem|codex respondeu sem imagem/i.test(String(message || ''))
+}
+
+function isProviderEventStream(contentType: string, rawText: string) {
+  const text = rawText.trimStart()
+  return contentType.includes('text/event-stream')
+    || text.startsWith('event:')
+    || text.startsWith('data:')
+    || text.includes('\nevent:')
+    || text.includes('\ndata:')
+}
+
+function parseProviderEventStream(rawText: string) {
+  const events: any[] = []
+  const chunks = rawText.split(/\r?\n\r?\n/)
+
+  for (const chunk of chunks) {
+    const data = chunk
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => line.startsWith('data:'))
+      .map(line => line.slice(5).trim())
+      .filter(line => line && line !== '[DONE]')
+      .join('\n')
+
+    if (!data) continue
+    try {
+      events.push(JSON.parse(data))
+    } catch {
+      // ignore non-JSON stream chunks
+    }
+  }
+
+  const completed = [...events].reverse().find(event => event?.type === 'response.completed' && event?.response)
+  return {
+    events,
+    response: completed?.response,
+    rawText: `[event stream omitted: ${events.length} events, ${rawText.length} chars]`,
+  }
+}
+
+function summarizeProviderResultForLog(result: any) {
+  if (!Array.isArray(result?.events)) return result
+  return {
+    eventCount: result.events.length,
+    response: result.response,
+    outputText: extractProviderOutputTextForLog(result),
+    rawText: result.rawText,
+  }
+}
+
+function extractProviderOutputTextForLog(result: any) {
+  const events = Array.isArray(result?.events) ? result.events : []
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]
+    const candidates = [
+      event?.text,
+      event?.part?.text,
+      ...(Array.isArray(event?.item?.content) ? event.item.content.map((part: any) => part?.text) : []),
+    ]
+    const found = candidates.find(value => typeof value === 'string' && value.trim())
+    if (found) return found.length > 800 ? `${found.slice(0, 800)}...` : found
+  }
+  return null
 }
 
 async function normalizeReferenceImages(raw: string | null | undefined): Promise<string[]> {
@@ -289,25 +544,29 @@ async function normalizeReferenceImages(raw: string | null | undefined): Promise
     ),
   )
 
-  const normalized = await Promise.all(deduped.map(async (value) => {
-    if (value.startsWith('data:image/')) return value
+  const normalized: string[] = []
+  for (const value of deduped.slice(0, MAX_REFERENCE_IMAGES)) {
+    if (value.startsWith('data:image/')) {
+      normalized.push(value)
+      continue
+    }
     if (value.startsWith('static/') || value.startsWith('/static/')) {
       const localPath = value.startsWith('/static/') ? value.slice(1) : value
       try {
-        return await readImageAsCompressedDataUrl(localPath, {
-          maxWidth: 768,
-          maxHeight: 768,
-          quality: 68,
-        })
+        normalized.push(await readImageAsCompressedDataUrl(localPath, {
+          maxWidth: REFERENCE_IMAGE_MAX_DIMENSION,
+          maxHeight: REFERENCE_IMAGE_MAX_DIMENSION,
+          quality: REFERENCE_IMAGE_QUALITY,
+        }))
       } catch (err) {
         logTaskWarn('ImageTask', 'reference-read-failed', { path: localPath, error: (err as Error).message })
-        return null
       }
+      continue
     }
-    return value
-  }))
+    normalized.push(value)
+  }
 
-  return normalized.filter((item): item is string => !!item).slice(0, 6)
+  return normalized.filter((item): item is string => !!item)
 }
 
 async function pollImageTask(id: number, config: AIConfig, taskId: string, workflowJobId: number, cacheKey: string) {
@@ -351,7 +610,14 @@ async function pollImageTask(id: number, config: AIConfig, taskId: string, workf
         headers,
         signal: AbortSignal.timeout(remainingMs),
       })
-      if (!resp.ok) continue
+      if (!resp.ok) {
+        const errorBody = await resp.text()
+        if (isCodexTokenRevoked(config.provider, resp.status, errorBody)) {
+          invalidateOpenAICodexCredential(errorBody)
+          throw new Error('Login do OpenAI Codex expirou ou foi revogado. Conecte o Codex novamente em Configuracoes > Conexoes e tente gerar a imagem de novo.')
+        }
+        continue
+      }
       const result = await resp.json() as any
 
       const pollResp = adapter.parsePollResponse(result)

@@ -5,6 +5,8 @@ import { logTaskProgress, logTaskWarn } from '../utils/task-logger.js'
 import { joinProviderUrl } from './adapters/url.js'
 import { revealAIConfigApiKey } from './ai-configs.js'
 import { getResolvedTextConfig, type ResolvedTextConfig } from './text-provider.js'
+import { getOpenAICodexResolvedCredential } from './provider-connections/openai-codex.js'
+import { getOpenAICodexCompatibleModelId, OPENAI_CODEX_BASE_URL } from './provider-connections/shared.js'
 
 export type ServiceType = 'text' | 'image' | 'video' | 'audio'
 
@@ -64,12 +66,12 @@ export function getActiveConfig(serviceType: ServiceType): AIConfig | null {
     model: models[0] || '',
     priority: active.priority,
   })
-  return {
+  return resolveConnectionBackedConfig({
     provider: active.provider || '',
     baseUrl: active.baseUrl,
     apiKey: revealAIConfigApiKey(active.apiKey),
     model: models[0] || '',
-  }
+  })
 }
 
 export function getTextConfig(): AIConfig {
@@ -104,10 +106,30 @@ export function getConfigById(id: number): AIConfig | null {
     model: models[0] || '',
     serviceType: row.serviceType,
   })
-  return {
+  return resolveConnectionBackedConfig({
     provider: row.provider || '',
     baseUrl: row.baseUrl,
     apiKey: revealAIConfigApiKey(row.apiKey),
     model: models[0] || '',
+  })
+}
+
+function resolveConnectionBackedConfig(config: AIConfig): AIConfig {
+  if (config.provider !== 'openai-codex') return config
+
+  const credential = getOpenAICodexResolvedCredential()
+  if (!credential) {
+    throw new Error('OpenAI Codex sem conexao ativa. Abra Configuracoes > Conexoes e conecte o provider.')
+  }
+
+  return {
+    ...config,
+    baseUrl: OPENAI_CODEX_BASE_URL,
+    apiKey: credential.accessToken,
+    model: getOpenAICodexCompatibleModelId(config.model),
+    authSource: credential.activeSource,
+    accountLabel: credential.accountLabel,
+    requiresManualApiKey: false,
+    connectionStatus: 'connected',
   }
 }

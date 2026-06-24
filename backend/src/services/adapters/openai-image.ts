@@ -16,12 +16,16 @@ export class OpenAIImageAdapter implements ImageProviderAdapter {
 
     const size = record.size || '1024x1024'
 
+    const model = record.model || 'gpt-image-1'
     const body: any = {
-      model: record.model || 'dall-e-3',
+      model,
       prompt: record.prompt,
       size,
       n: 1,
-      response_format: 'url',
+    }
+
+    if (!model.toLowerCase().startsWith('gpt-image')) {
+      body.response_format = 'url'
     }
 
     return {

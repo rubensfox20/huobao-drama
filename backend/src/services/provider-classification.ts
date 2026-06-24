@@ -25,6 +25,8 @@ export function classifyProviderIssue(input: {
     || message.includes('usage_limit_reached')
     || message.includes('usage limit has been reached')
     || message.includes('resets_in_seconds')
+    || message.includes('no image-generation tool is available')
+    || message.includes('sem uma ferramenta de geração de imagem')
   ) return 'quota_exceeded'
   if (
     message.includes('pre-paid credits')

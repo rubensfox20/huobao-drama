@@ -44,14 +44,20 @@ type UseEpisodeStageNavigationInput = {
   mergeUrl: ComputedRef<string | null>
   prodStepDone: (id: string) => boolean
   prodStepPartial: (id: string) => boolean
+  prodStepSatisfied?: (id: string) => boolean
+  prodStepBlocked?: (id: string) => boolean
+  prodStepNotApplicable?: (id: string) => boolean
   isWorkbenchStageDone: (key: string) => boolean
   queueContentFocus: () => void
 }
 
 export function useEpisodeStageNavigation(input: UseEpisodeStageNavigationInput) {
+  const productionStepSatisfied = (id: string) => input.prodStepSatisfied?.(id) ?? input.prodStepDone(id)
   const productionStepState = (id: string) => ({
     done: input.prodStepDone(id),
     partial: input.prodStepPartial(id),
+    blocked: input.prodStepBlocked?.(id) || false,
+    notApplicable: input.prodStepNotApplicable?.(id) || false,
   })
   const storyboardListState = () => {
     const done = input.isWorkbenchStageDone('storyboards') || input.storyboardStepReady.value
@@ -107,17 +113,17 @@ export function useEpisodeStageNavigation(input: UseEpisodeStageNavigationInput)
   function mainStageDone(stageId: string) {
     if (stageId === 'script') return !!input.scriptContent.value
     if (stageId === 'assets') {
-      const charImagesReady = input.visualCharTotal.value > 0 && input.charImgCount.value === input.visualCharTotal.value
-      const sceneImagesReady = input.scenes.value.length > 0 && input.sceneImgCount.value === input.scenes.value.length
-      return input.extractionStepReady.value && charImagesReady && sceneImagesReady
+      return input.extractionStepReady.value
+        && productionStepSatisfied('chars')
+        && productionStepSatisfied('scenes')
     }
     if (stageId === 'storyboard') {
       if (!input.storyboardStepReady.value) return false
-      return input.prodStepDone('dubbing')
-        && input.prodStepDone('audio')
-        && input.prodStepDone('shots')
-        && input.prodStepDone('videos')
-        && input.prodStepDone('compose')
+      return productionStepSatisfied('dubbing')
+        && productionStepSatisfied('audio')
+        && productionStepSatisfied('shots')
+        && productionStepSatisfied('videos')
+        && productionStepSatisfied('compose')
     }
     if (stageId === 'export') return !!input.mergeUrl.value
     return false

@@ -9,12 +9,46 @@ import { protectPersistedSecrets } from '../utils/secrets.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DB_PATH = process.env.DB_PATH || path.resolve(__dirname, '../../../data/huobao_drama.db')
+const DB_RUNTIME_STATE_KEY = Symbol.for('huobao-drama.sqliteRuntimeState')
+
+type DbRuntimeState = {
+  sqlite?: Database.Database
+  cleanupRegistered?: boolean
+}
+
+const dbRuntimeState = (globalThis as typeof globalThis & {
+  [DB_RUNTIME_STATE_KEY]?: DbRuntimeState
+})[DB_RUNTIME_STATE_KEY] ??= {}
+
+function closeSqliteConnection() {
+  const activeSqlite = dbRuntimeState.sqlite
+  if (!activeSqlite?.open) return
+  try {
+    activeSqlite.close()
+  } catch {
+    // best effort during hot reload or process shutdown
+  }
+}
+
+function shutdownAfterClosingSqlite(exitCode: number) {
+  closeSqliteConnection()
+  process.exit(exitCode)
+}
 
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true })
 
+closeSqliteConnection()
 const sqlite = new Database(DB_PATH, { timeout: 30000 })
+dbRuntimeState.sqlite = sqlite
 sqlite.pragma('journal_mode = WAL')
 sqlite.pragma('busy_timeout = 30000')
+
+if (!dbRuntimeState.cleanupRegistered) {
+  process.once('beforeExit', closeSqliteConnection)
+  process.once('SIGTERM', () => shutdownAfterClosingSqlite(143))
+  process.once('SIGINT', () => shutdownAfterClosingSqlite(130))
+  dbRuntimeState.cleanupRegistered = true
+}
 
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS dramas (
@@ -477,6 +511,8 @@ sqlite.exec(`
     ON provider_usage_events (workflow_job_id);
   CREATE INDEX IF NOT EXISTS idx_provider_usage_events_provider_status
     ON provider_usage_events (provider, status);
+  CREATE INDEX IF NOT EXISTS idx_provider_usage_events_created_at
+    ON provider_usage_events (created_at);
 
   CREATE TABLE IF NOT EXISTS prompt_templates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

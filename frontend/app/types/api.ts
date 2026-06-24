@@ -88,3 +88,48 @@ export type ProviderConnectionsStatus = {
   runtime_sessions: Array<Record<string, unknown>>
   providers: Record<string, ProviderConnectionSession>
 }
+
+export type CanonicalPipelineState =
+  | 'not_started'
+  | 'in_progress'
+  | 'blocked'
+  | 'needs_review'
+  | 'complete'
+  | 'not_applicable'
+
+export type PipelineStageStatus =
+  | 'pending'
+  | 'ready'
+  | 'partial'
+  | 'done'
+  | 'blocked'
+  | 'running'
+  | 'not_applicable'
+
+export type PipelineIssue = {
+  code: string
+  severity: string
+  message: string
+  entityType?: string
+  entityId?: number | null
+  entity_type?: string
+  entity_id?: number | null
+}
+
+export type PipelineStageSummary = {
+  key: string
+  state: CanonicalPipelineState
+  status: PipelineStageStatus
+  count?: number
+  total?: number
+  blocked?: boolean
+  issues?: PipelineIssue[]
+  meta?: Record<string, unknown>
+}
+
+export type EpisodePipelineStatus = {
+  episodeId: number
+  stages: Record<string, PipelineStageSummary>
+  steps: Record<string, Record<string, unknown>>
+  nextAction: { key: string; label: string } | null
+}

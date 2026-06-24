@@ -236,8 +236,8 @@ export const episodePtBR = {
     tabs: {
       chars: 'Visuais dos personagens',
       scenes: 'Imagens de cenario',
-      dubbing: 'Dublagem',
-      audio: 'Trilha e efeitos',
+      dubbing: 'Voz dos dialogos',
+      audio: 'Trilha, ambiente e SFX',
       shots: 'Frames das tomadas',
       videos: 'Videos das tomadas',
       compose: 'Composicao',
@@ -264,7 +264,7 @@ export const episodePtBR = {
       summary: '{count} tomadas',
       generatedSummary: '{done}/{total} geradas',
       totalSummary: '{count} tomadas no episodio',
-      batch: 'Gerar dublagens em lote',
+      batch: 'Gerar vozes em lote',
       emptyTitle: 'Nao ha dublagem para gerar',
       emptyDescription: 'Preencha o campo "Personagem: fala" ou "Narracao: texto" nas tomadas para liberar a voz.',
       narrator: 'Narracao',
@@ -278,7 +278,7 @@ export const episodePtBR = {
       },
       audio: {
         summary: '{ready}/{total} cues com audio',
-        manualFirst: 'Manual first',
+        manualFirst: 'Cues manuais',
         add: 'Adicionar',
         replace: 'Trocar',
         copyPrompt: 'Copiar',
@@ -528,7 +528,7 @@ export const episodePtBR = {
     },
     stages: {
       script: 'Roteiro',
-      audio: 'Trilha e efeitos',
+      audio: 'Trilha, ambiente e SFX',
       review: 'Revisao',
       compose: 'Composicao',
       merge: 'Montagem final',

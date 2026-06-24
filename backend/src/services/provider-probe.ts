@@ -49,6 +49,15 @@ export function buildProviderProbe(serviceType: string, provider: string, baseUr
     }
   }
 
+  if (p === 'openai-codex') {
+    return {
+      method: 'GET',
+      url: joinProviderUrl(baseUrl, '', '/responses'),
+      headers: bearerHeaders(apiKey),
+      body: undefined,
+    }
+  }
+
   if (p === 'openai' || p === 'openrouter' || p === 'chatfire') {
     return {
       method: 'GET',

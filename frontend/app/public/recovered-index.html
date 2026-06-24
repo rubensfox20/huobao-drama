@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Huobao Drama</title>
+  <link rel="stylesheet" href="/recovered/index.Cf56yvmK.css">
+  <style>
+    .canvas-node-card img,
+    [data-canvas-key] img {
+      -webkit-user-drag: none;
+      user-select: none;
+    }
+    .canvas-node-card > .canvas-node-options,
+    [data-canvas-key] .canvas-node-options {
+      align-items: center !important;
+      box-sizing: border-box !important;
+      display: inline-flex !important;
+      justify-content: center !important;
+      line-height: 0 !important;
+      padding: 0 !important;
+    }
+    .canvas-node-card > .canvas-node-options svg,
+    [data-canvas-key] .canvas-node-options svg {
+      display: block !important;
+      flex: 0 0 auto !important;
+      height: 17px !important;
+      margin: 0 !important;
+      width: 17px !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="__nuxt"></div>
+  <div id="teleports"></div>
+  <script>
+    history.replaceState(history.state, '', `/${window.location.search}${window.location.hash}`);
+    document.addEventListener('dragstart', (event) => {
+      const target = event.target;
+      if (target instanceof HTMLImageElement && target.closest('[data-canvas-key], .canvas-node-card')) {
+        event.preventDefault();
+      }
+    }, true);
+    const disableCanvasImageDrag = (root = document) => {
+      root.querySelectorAll?.('[data-canvas-key] img, .canvas-node-card img')?.forEach((image) => {
+        image.draggable = false;
+        image.setAttribute('draggable', 'false');
+      });
+    };
+    document.addEventListener('DOMContentLoaded', () => disableCanvasImageDrag());
+    new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        mutation.addedNodes.forEach((node) => {
+          if (node instanceof Element) disableCanvasImageDrag(node);
+        });
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
+    window.__NUXT__ = {};
+    window.__NUXT__.config = { public: {}, app: { baseURL: '/', buildId: 'recovered', buildAssetsDir: '/recovered/', cdnURL: '' } };
+  </script>
+  <script type="module" src="/recovered/BuCMH24V.js"></script>
+</body>
+</html>

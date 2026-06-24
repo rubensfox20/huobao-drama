@@ -29,6 +29,35 @@ interface GenerateVideoParams {
   workflowJobId?: number
 }
 
+type VideoPollState = {
+  taskId: string
+  startedAt: number
+}
+
+const ACTIVE_VIDEO_POLLS_KEY = Symbol.for('huobao-drama.activeVideoPolls')
+const VIDEO_POLL_INTERVAL_MS = readPositiveIntEnv('VIDEO_POLL_INTERVAL_MS', 10_000)
+const VIDEO_POLL_MAX_DURATION_MS = readPositiveIntEnv('VIDEO_POLL_MAX_DURATION_MS', 30 * 60_000)
+const VIDEO_POLL_FETCH_TIMEOUT_MS = readPositiveIntEnv('VIDEO_POLL_FETCH_TIMEOUT_MS', 30_000)
+
+function getActiveVideoPolls() {
+  const root = globalThis as typeof globalThis & {
+    [ACTIVE_VIDEO_POLLS_KEY]?: Map<number, VideoPollState>
+  }
+  if (!root[ACTIVE_VIDEO_POLLS_KEY]) {
+    root[ACTIVE_VIDEO_POLLS_KEY] = new Map()
+  }
+  return root[ACTIVE_VIDEO_POLLS_KEY]!
+}
+
+function readPositiveIntEnv(name: string, fallback: number) {
+  const value = Number(process.env[name])
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback
+}
+
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 export async function generateVideo(params: GenerateVideoParams): Promise<{ id: number; workflowJobId: number; cacheHit: boolean }> {
   const ts = now()
   const sanitizedPrompt = sanitizeVisualPrompt(params.prompt)
@@ -260,7 +289,7 @@ async function processVideoGeneration(id: number, config: AIConfig, workflowJobI
         .run()
       logTaskProgress('VideoTask', 'poll-start', { id, taskId: sdkResponse.taskId, provider: config.provider })
 
-      pollVideoTask(id, config, sdkResponse.taskId!, record.storyboardId, workflowJobId, cacheKey)
+      void pollVideoTask(id, config, sdkResponse.taskId!, record.storyboardId, workflowJobId, cacheKey)
       return
     }
 
@@ -329,7 +358,7 @@ async function processVideoGeneration(id: number, config: AIConfig, workflowJobI
       return
     }
 
-    pollVideoTask(id, config, taskId!, record.storyboardId, workflowJobId, cacheKey)
+    void pollVideoTask(id, config, taskId!, record.storyboardId, workflowJobId, cacheKey)
   } catch (err: any) {
     logTaskError('VideoTask', 'process', { id, provider: config.provider, error: err.message })
     db.update(schema.videoGenerations)
@@ -375,50 +404,91 @@ async function normalizeVideoReferenceUrls(raw: string | null | undefined): Prom
 }
 
 async function pollVideoTask(id: number, config: AIConfig, taskId: string, storyboardId: number | null | undefined, workflowJobId: number, cacheKey: string) {
-  const adapter = getVideoAdapter(config.provider)
-
-  for (let i = 0; i < 300; i++) {
-    await new Promise(r => setTimeout(r, 10000))
-    try {
-      const { url, method, headers } = adapter.buildPollRequest(config, taskId)
-      logTaskProgress('VideoTask', 'poll-request', {
-        id,
-        taskId,
-        provider: config.provider,
-        method,
-        url: redactUrl(url),
-        attempt: i + 1,
-      })
-      const resp = await fetch(url, { method, headers })
-      if (!resp.ok) continue
-      const result = await resp.json() as any
-
-      const pollResp = adapter.parsePollResponse(result)
-
-      if (pollResp.status === 'completed' && pollResp.videoUrl) {
-        logTaskSuccess('VideoTask', 'poll-complete', { id, taskId, videoUrl: pollResp.videoUrl })
-        await handleVideoComplete(id, pollResp.videoUrl, null, storyboardId)
-        persistVideoCache(id, cacheKey)
-        completeWorkflowJob(workflowJobId, { outputSummary: `video_generation:${id}`, metadata: { cacheHit: false } })
-        return
-      }
-      if (pollResp.status === 'failed') {
-        logTaskError('VideoTask', 'poll-failed', { id, taskId, error: pollResp.error || 'Video generation failed' })
-        throw new Error(pollResp.error || 'Video generation failed')
-      }
-    } catch (err: any) {
-      if (i === 299) {
-        logTaskError('VideoTask', 'poll-timeout', { id, taskId, error: err.message })
-        db.update(schema.videoGenerations)
-          .set({ status: 'failed', errorMsg: `Timeout: ${err.message}`, updatedAt: now() })
-          .where(eq(schema.videoGenerations.id, id))
-          .run()
-        failWorkflowJob(workflowJobId, `Timeout: ${err.message}`, { metadata: { generationId: id, taskId } })
-        return
-      }
-      logTaskWarn('VideoTask', 'poll-retry', { id, taskId, attempt: i + 1, error: err.message })
-    }
+  const activePolls = getActiveVideoPolls()
+  const existingPoll = activePolls.get(id)
+  if (existingPoll) {
+    logTaskWarn('VideoTask', 'poll-duplicate-skip', { id, taskId, existingTaskId: existingPoll.taskId })
+    return
   }
+
+  activePolls.set(id, { taskId, startedAt: Date.now() })
+  const adapter = getVideoAdapter(config.provider)
+  const startedAt = Date.now()
+  const maxAttempts = Math.ceil(VIDEO_POLL_MAX_DURATION_MS / VIDEO_POLL_INTERVAL_MS)
+
+  try {
+    for (let i = 0; i < maxAttempts; i++) {
+      if (Date.now() - startedAt >= VIDEO_POLL_MAX_DURATION_MS) {
+        failVideoGeneration(id, workflowJobId, 'Timeout: Polling exceeded maximum duration', taskId)
+        return
+      }
+
+      await sleep(VIDEO_POLL_INTERVAL_MS)
+
+      const current = db.select({
+        status: schema.videoGenerations.status,
+        taskId: schema.videoGenerations.taskId,
+      }).from(schema.videoGenerations).where(eq(schema.videoGenerations.id, id)).all()[0]
+      if (!current || current.status !== 'processing' || current.taskId !== taskId) {
+        logTaskWarn('VideoTask', 'poll-stopped', { id, taskId, status: current?.status, currentTaskId: current?.taskId })
+        return
+      }
+
+      try {
+        const { url, method, headers } = adapter.buildPollRequest(config, taskId)
+        logTaskProgress('VideoTask', 'poll-request', {
+          id,
+          taskId,
+          provider: config.provider,
+          method,
+          url: redactUrl(url),
+          attempt: i + 1,
+        })
+        const resp = await fetch(url, {
+          method,
+          headers,
+          signal: AbortSignal.timeout(VIDEO_POLL_FETCH_TIMEOUT_MS),
+        })
+        if (!resp.ok) continue
+        const result = await resp.json() as any
+
+        const pollResp = adapter.parsePollResponse(result)
+
+        if (pollResp.status === 'completed' && pollResp.videoUrl) {
+          logTaskSuccess('VideoTask', 'poll-complete', { id, taskId, videoUrl: pollResp.videoUrl })
+          await handleVideoComplete(id, pollResp.videoUrl, null, storyboardId)
+          persistVideoCache(id, cacheKey)
+          completeWorkflowJob(workflowJobId, { outputSummary: `video_generation:${id}`, metadata: { cacheHit: false } })
+          return
+        }
+        if (pollResp.status === 'failed') {
+          const message = pollResp.error || 'Video generation failed'
+          logTaskError('VideoTask', 'poll-failed', { id, taskId, error: message })
+          failVideoGeneration(id, workflowJobId, message, taskId)
+          return
+        }
+      } catch (err: any) {
+        if (i === maxAttempts - 1 || Date.now() - startedAt >= VIDEO_POLL_MAX_DURATION_MS) {
+          const message = `Timeout: ${err.message}`
+          logTaskError('VideoTask', 'poll-timeout', { id, taskId, error: err.message })
+          failVideoGeneration(id, workflowJobId, message, taskId)
+          return
+        }
+        logTaskWarn('VideoTask', 'poll-retry', { id, taskId, attempt: i + 1, error: err.message })
+      }
+    }
+    failVideoGeneration(id, workflowJobId, 'Timeout: Polling exceeded maximum attempts', taskId)
+  } finally {
+    activePolls.delete(id)
+  }
+}
+
+function failVideoGeneration(id: number, workflowJobId: number, message: string, taskId?: string) {
+  db.update(schema.videoGenerations)
+    .set({ status: 'failed', errorMsg: message, updatedAt: now() })
+    .where(eq(schema.videoGenerations.id, id))
+    .run()
+  failWorkflowJob(workflowJobId, message, { metadata: { generationId: id, taskId } })
 }
 
 async function handleVideoComplete(id: number, videoUrl: string, duration: number | null | undefined, storyboardId?: number | null) {

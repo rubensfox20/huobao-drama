@@ -384,7 +384,7 @@ onBeforeUnmount(() => {
 .base-select-group-label {
   padding: 6px 10px 3px;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-3);

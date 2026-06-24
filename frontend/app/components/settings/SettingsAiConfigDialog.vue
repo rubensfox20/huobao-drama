@@ -167,7 +167,7 @@ const titleNew = computed(() => t('settings.ai.modal.titleNew', { service: curre
 
 .setup-kicker {
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-3);
@@ -177,7 +177,7 @@ const titleNew = computed(() => t('settings.ai.modal.titleNew', { service: curre
 .modal-title {
   font-family: var(--font-display);
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .modal-note {

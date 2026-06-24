@@ -58,7 +58,7 @@ const title = computed(() => t(`episode.workbench.stages.${props.stage}`))
 
 .validation-kicker {
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-3);
@@ -67,7 +67,7 @@ const title = computed(() => t(`episode.workbench.stages.${props.stage}`))
 .validation-title {
   margin-top: 4px;
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-0);
 }
 
@@ -82,7 +82,7 @@ const title = computed(() => t(`episode.workbench.stages.${props.stage}`))
   background: rgba(27, 41, 64, 0.08);
   color: var(--text-1);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .validation-list {
@@ -112,7 +112,7 @@ const title = computed(() => t(`episode.workbench.stages.${props.stage}`))
   border-radius: 999px;
   background: rgba(27, 41, 64, 0.08);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }

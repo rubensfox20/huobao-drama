@@ -10,6 +10,7 @@ export type ProviderConnectionSource =
 
 export const OPENAI_CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex'
 export const OPENAI_CODEX_SESSION_MODEL_IDS = [
+  'gpt-5.5',
   'gpt-5.4',
   'gpt-5-mini',
   'gpt-5.3-codex',
@@ -24,7 +25,11 @@ export function getOpenAICodexFallbackModelIds(modelId?: string | null) {
   const normalized = getOpenAICodexCompatibleModelId(modelId)
   const candidates = new Set<string>([normalized])
 
-  if (normalized === 'gpt-5.4') {
+  if (normalized === 'gpt-5.5') {
+    candidates.add('gpt-5.4')
+    candidates.add('gpt-5.3-codex')
+    candidates.add('gpt-5-mini')
+  } else if (normalized === 'gpt-5.4') {
     candidates.add('gpt-5.3-codex')
     candidates.add('gpt-5-mini')
     candidates.add('gpt-5.2-codex')
@@ -92,7 +97,7 @@ export function decodeJwtPayload(token?: string) {
 }
 
 export function getOpenAICodexCompatibleModelId(modelId?: string | null) {
-  const normalizedModelId = String(modelId || 'gpt-5.3-codex').trim().toLowerCase()
+  const normalizedModelId = String(modelId || 'gpt-5.5').trim().toLowerCase()
 
   if (normalizedModelId === 'gpt-5-mini' || normalizedModelId === 'gpt-5.4-mini') {
     return 'gpt-5-mini'
@@ -222,7 +227,7 @@ export function hashSecretSignature(value?: string | null) {
 }
 
 export function defaultConnectionModel(provider: ConnectableProvider) {
-  if (provider === 'openai-codex') return 'gpt-5.3-codex'
+  if (provider === 'openai-codex') return 'gpt-5.5'
   return prefixGitHubCopilotModelId('gpt-4o-mini')
 }
 

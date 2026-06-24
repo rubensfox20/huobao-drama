@@ -20,6 +20,7 @@ import {
 const PROVIDER: ConnectableProvider = 'openai-codex'
 const DEFAULT_DEVICE_CODE_URL = 'https://auth.openai.com/codex/device'
 const ACTIVE_OPENAI_FLOWS_KEY = Symbol.for('huobao-drama.activeOpenAICodexFlows')
+const MAX_TRANSCRIPT_BUFFER_CHARS = 24_000
 
 type OpenAICodexStartMode = 'local' | 'login' | 'code'
 
@@ -203,9 +204,16 @@ function extractUserCode(output: string) {
 
 function trimTranscript(value: string) {
   const sanitizedValue = stripAnsiControlSequences(value)
-  return sanitizedValue.length <= 24000
+  return sanitizedValue.length <= MAX_TRANSCRIPT_BUFFER_CHARS
     ? sanitizedValue
-    : sanitizedValue.slice(sanitizedValue.length - 24000)
+    : sanitizedValue.slice(sanitizedValue.length - MAX_TRANSCRIPT_BUFFER_CHARS)
+}
+
+function appendTranscriptBuffer(current: string, chunk: Buffer | string) {
+  const next = current + chunk.toString()
+  return next.length <= MAX_TRANSCRIPT_BUFFER_CHARS
+    ? next
+    : next.slice(next.length - MAX_TRANSCRIPT_BUFFER_CHARS)
 }
 
 function updateDeviceHints(flow: OpenAIFlowState) {
@@ -278,7 +286,7 @@ function completeFlow(payload: { accountLabel?: string; signature?: string; acti
   cleanupFlow({ keepSession: true })
 }
 
-async function syncOpenAICodexSessionFromDiskRaw(options: {
+function syncOpenAICodexSessionFromDiskRaw(options: {
   force?: boolean
   codexHomeOverride?: string
   activeSource?: ProviderConnectionSource
@@ -364,8 +372,6 @@ export async function syncOpenAICodexSessionFromDisk(options: {
   })
 
   try {
-    assertCodexBinaryAvailable()
-
     if (!hasLocalOpenAICodexLogin(options.codexHomeOverride)) {
       clearProviderConnection(PROVIDER)
       updateProviderRuntimeSession(PROVIDER, {
@@ -511,11 +517,11 @@ export async function startOpenAICodexConnection(mode: OpenAICodexStartMode) {
     getActiveFlows().set(flowKey(), flow)
 
     child.stdout.on('data', (chunk) => {
-      flow.stdoutBuffer += chunk.toString()
+      flow.stdoutBuffer = appendTranscriptBuffer(flow.stdoutBuffer, chunk)
       updateDeviceHints(flow)
     })
     child.stderr.on('data', (chunk) => {
-      flow.stderrBuffer += chunk.toString()
+      flow.stderrBuffer = appendTranscriptBuffer(flow.stderrBuffer, chunk)
       updateDeviceHints(flow)
     })
     child.on('error', (error) => {
@@ -602,6 +608,7 @@ export function disconnectOpenAICodexConnection() {
 }
 
 export function getOpenAICodexResolvedCredential() {
+  syncOpenAICodexSessionFromDiskRaw({ activeSource: 'codex-local' })
   const connection = getProviderConnection(PROVIDER)
   const accessToken = normalizeString(connection?.oauthPayload?.accessToken)
   if (!accessToken) return null
@@ -612,6 +619,39 @@ export function getOpenAICodexResolvedCredential() {
     baseUrl: OPENAI_CODEX_BASE_URL,
     accountLabel: connection?.accountLabel || connection?.oauthPayload?.accountEmail || connection?.oauthPayload?.accountName,
     activeSource: connection?.activeSource || 'codex-local',
+  }
+}
+
+export function invalidateOpenAICodexCredential(reason = 'Codex OAuth token invalidado.') {
+  const signature = getCodexAuthFileSignature()
+  upsertProviderConnection({
+    provider: PROVIDER,
+    activeSource: 'codex-local',
+    ignoredAuthSignature: signature || null,
+    accountLabel: null,
+    oauthPayload: null,
+    metadata: {
+      baseUrl: OPENAI_CODEX_BASE_URL,
+      localLoginAvailable: hasLocalOpenAICodexLogin(),
+      invalidatedAt: new Date().toISOString(),
+      invalidationReason: reason,
+    },
+  })
+  const patch = {
+    status: 'failed',
+    stage: 'failed',
+    message: 'Login do OpenAI Codex expirou ou foi revogado. Conecte o Codex novamente pelo navegador.',
+    details: reason,
+  } as const
+  if (getProviderRuntimeSession(PROVIDER)) {
+    updateProviderRuntimeSession(PROVIDER, patch)
+  } else {
+    createProviderRuntimeSession({
+      providerId: PROVIDER,
+      flowType: 'oauth',
+      mode: 'local',
+      ...patch,
+    })
   }
 }
 

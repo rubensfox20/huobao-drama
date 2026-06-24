@@ -62,7 +62,7 @@ const episodeMessages = messages.episode
 
 .episode-orchestrator-kicker {
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-3);
@@ -71,7 +71,7 @@ const episodeMessages = messages.episode
 .episode-orchestrator-title {
   margin-top: 4px;
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-0);
 }
 
@@ -83,7 +83,7 @@ const episodeMessages = messages.episode
   padding: 0 12px;
   border-radius: 999px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   background: rgba(89, 101, 126, 0.1);
   color: var(--text-2);
 }

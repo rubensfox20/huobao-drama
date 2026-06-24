@@ -33,6 +33,7 @@ import discovery from './routes/discovery.js'
 import audioCues from './routes/audioCues.js'
 import providerConnections from './routes/providerConnections.js'
 import adminSession from './routes/adminSession.js'
+import storyStudio from './routes/storyStudio.js'
 import { requestLogger, errorHandler } from './middleware/logger.js'
 import { ensurePromptTemplatesSeeded } from './services/prompt-templates.js'
 import { recoverOrphanedGenerationRecords, recoverOrphanedWorkflowJobs } from './services/workflow-jobs.js'
@@ -121,6 +122,7 @@ export function buildApp() {
   api.route('/ideas', ideas)
   api.route('/discovery', discovery)
   api.route('/audio-cues', audioCues)
+  api.route('/story-studio', storyStudio)
 
   app.route('/api/v1', api)
 

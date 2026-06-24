@@ -141,7 +141,16 @@ export const dramaAPI = {
   get: (id: number) => api.get(`/dramas/${id}`),
   create: (data: any) => api.post('/dramas', data),
   update: (id: number, data: any) => api.put(`/dramas/${id}`, data),
+  updateEpisodes: (id: number, episodes: any[]) => api.put(`/dramas/${id}/episodes`, { episodes }),
   del: (id: number) => api.del(`/dramas/${id}`),
+}
+
+export const storyStudioAPI = {
+  generateSummary: (data: any) => api.post('/story-studio/summary', data),
+  generateEpisodeOutlines: (data: any) => api.post('/story-studio/episode-outlines', data),
+  generateEpisodeScripts: (data: any) => api.post('/story-studio/episode-scripts', data),
+  analyzeProductionAssets: (data: any) => api.post('/story-studio/production-assets', data),
+  optimizeVisualPrompt: (data: any) => api.post('/story-studio/optimize-visual-prompt', data),
 }
 
 export const episodeAPI = {
@@ -177,6 +186,8 @@ export const sceneAPI = {
 
 export const imageAPI = {
   generate: (d: any) => api.post('/images', d),
+  get: (id: number) => api.get(`/images/${id}`),
+  del: (id: number) => api.del(`/images/${id}`),
   list: async (params?: { drama_id?: number; storyboard_id?: number; status?: string; page?: number; page_size?: number }) => {
     const query = new URLSearchParams()
     if (params?.drama_id) query.set('drama_id', String(params.drama_id))

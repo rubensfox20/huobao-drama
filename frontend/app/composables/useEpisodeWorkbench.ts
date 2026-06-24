@@ -1,5 +1,6 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, type ComputedRef } from 'vue'
 import { episodeAPI, healthAPI, providerAvailabilityAPI, workflowJobsAPI } from './useApi'
+import type { CanonicalPipelineState, EpisodePipelineStatus } from '~/types/api'
 
 type ServiceKey = 'text' | 'image' | 'video' | 'audio'
 type ValidationStage = 'script' | 'audio' | 'compose' | 'merge'
@@ -26,14 +27,6 @@ type ValidationPayload = {
     entity_id?: number | null
   }>
 }
-
-type CanonicalPipelineState =
-  | 'not_started'
-  | 'in_progress'
-  | 'blocked'
-  | 'needs_review'
-  | 'complete'
-  | 'not_applicable'
 
 const RUNNING_POLL_INTERVAL_MS = 5000
 const QUEUED_POLL_INTERVAL_MS = 9000
@@ -68,7 +61,7 @@ function safeArray<T = any>(value: unknown): T[] {
 
 export function useEpisodeWorkbench(input: UseEpisodeWorkbenchInput) {
   const workflowJobs = ref<any[]>([])
-  const pipelineStatus = ref<any>(null)
+  const pipelineStatus = ref<EpisodePipelineStatus | null>(null)
   const loading = reactive({
     jobs: false,
     validation: false,

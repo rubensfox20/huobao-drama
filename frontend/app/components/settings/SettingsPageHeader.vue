@@ -71,7 +71,7 @@ const showBrandImage = ref(true)
 .settings-brand-fallback {
   font-family: var(--font-display);
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--accent-text);
   line-height: 1;
 }
@@ -85,7 +85,7 @@ const showBrandImage = ref(true)
 
 .settings-brand-kicker {
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-3);
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -93,7 +93,7 @@ const showBrandImage = ref(true)
 
 .settings-brand-name {
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-1);
   font-family: var(--font-display);
 }
@@ -101,8 +101,8 @@ const showBrandImage = ref(true)
 .settings-title {
   font-family: var(--font-display);
   font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 .settings-desc {

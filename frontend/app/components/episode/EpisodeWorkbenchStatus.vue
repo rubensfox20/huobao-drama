@@ -181,7 +181,7 @@ function normalizeProviderMessage(text) {
 
 .status-kicker {
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-3);
@@ -203,7 +203,7 @@ function normalizeProviderMessage(text) {
   padding: 0 10px;
   border-radius: 999px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   flex-shrink: 0;
 }
 
@@ -265,7 +265,7 @@ function normalizeProviderMessage(text) {
 .status-block-head {
   margin-bottom: 14px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-1);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -309,7 +309,7 @@ function normalizeProviderMessage(text) {
 .badge-label,
 .job-kind {
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-1);
   text-transform: uppercase;
   letter-spacing: 0.08em;

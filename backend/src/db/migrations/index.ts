@@ -90,6 +90,12 @@ const migrations: Migration[] = [
       createIndexIfMissing(sqlite, 'idx_episode_scenes_scene_episode', 'CREATE INDEX idx_episode_scenes_scene_episode ON episode_scenes (scene_id, episode_id)')
     },
   },
+  {
+    id: '003_provider_usage_retention_index',
+    up: (sqlite) => {
+      createIndexIfMissing(sqlite, 'idx_provider_usage_events_created_at', 'CREATE INDEX idx_provider_usage_events_created_at ON provider_usage_events (created_at)')
+    },
+  },
 ]
 
 export function runMigrations(sqlite: Database.Database) {

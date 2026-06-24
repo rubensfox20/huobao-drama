@@ -4,6 +4,7 @@ import { MiniMaxVideoAdapter } from './minimax-video'
 import { MiniMaxTTSAdapter } from './minimax-tts'
 import { GeminiTTSAdapter } from './gemini-tts'
 import { OpenAIImageAdapter } from './openai-image'
+import { OpenAICodexImageAdapter } from './openai-codex-image'
 import { GeminiImageAdapter } from './gemini-image'
 import { VolcEngineImageAdapter } from './volcengine-image'
 import { VolcEngineVideoAdapter } from './volcengine-video'
@@ -19,6 +20,7 @@ import type { ImageProviderAdapter, VideoProviderAdapter, TTSProviderAdapter } f
 export const imageAdapters: Record<string, ImageProviderAdapter> = {
   minimax: new MiniMaxImageAdapter(),
   openai: new OpenAIImageAdapter(),
+  'openai-codex': new OpenAICodexImageAdapter(),
   gemini: new GeminiImageAdapter(),
   volcengine: new VolcEngineImageAdapter(),
   ali: new AliImageAdapter(),

@@ -18,7 +18,7 @@ export type CanonicalPipelineState =
   | 'complete'
   | 'not_applicable'
 
-type PipelineStageSummary = {
+export type PipelineStageSummary = {
   key: string
   state: CanonicalPipelineState
   status: 'pending' | 'ready' | 'partial' | 'done' | 'blocked' | 'running' | 'not_applicable'
@@ -29,7 +29,7 @@ type PipelineStageSummary = {
   meta?: Record<string, any>
 }
 
-type PipelineContract = {
+export type PipelineContract = {
   episodeId: number
   stages: Record<string, PipelineStageSummary>
   steps: Record<string, Record<string, any>>
@@ -49,6 +49,20 @@ function summarizeCount(current: number, total: number) {
   if (current <= 0) return 'not_started' as const
   if (current >= total) return 'complete' as const
   return 'in_progress' as const
+}
+
+function isNarratorLikeCharacter(character: typeof schema.characters.$inferSelect) {
+  const text = `${character.name || ''} ${character.role || ''}`.toLowerCase()
+  return /\b(narrator|narrador|narradora|narracao|narração)\b/.test(text)
+}
+
+function audioIssueBlocksStage(issue: { code?: string; severity?: string }) {
+  if (issue.severity !== 'error') return false
+  const code = String(issue.code || '').toLowerCase()
+  return code.includes('missing_audio_cue_asset')
+    || code.includes('invalid_audio_cue')
+    || code.includes('broken_audio')
+    || code.includes('missing_tts')
 }
 
 function stage(key: string, state: CanonicalPipelineState, patch: Partial<PipelineStageSummary> = {}): PipelineStageSummary {
@@ -139,10 +153,15 @@ export function buildEpisodePipelineContract(episodeId: number): PipelineContrac
   )
 
   const storyboardsWithSpeech = storyboards.filter((row) => String(getStoryboardSpokenDialogue(row) || '').trim())
-  const storyboardsWithTts = storyboards.filter((row) => String(getStoryboardSpokenDialogue(row) || '').trim() && storyboardHasValidTtsAudio(row))
+  const storyboardsWithTts = storyboardsWithSpeech.filter((row) => storyboardHasValidTtsAudio(row))
+  const storyboardsWithInvalidTts = storyboardsWithSpeech.filter((row) => {
+    const hasTtsReference = String(row.ttsAudioUrl || '').trim()
+    return hasTtsReference && !storyboardHasValidTtsAudio(row)
+  })
   const charactersWithVoice = characters.filter((row) => row.voiceStyle)
   const charactersWithSample = characters.filter((row) => row.voiceSampleUrl)
-  const characterVisuals = characters.filter((row) => row.imageUrl)
+  const visualCharacters = characters.filter((row) => !isNarratorLikeCharacter(row))
+  const characterVisuals = visualCharacters.filter((row) => row.imageUrl)
   const sceneVisuals = scenes.filter((row) => row.imageUrl)
   const storyboardFrames = storyboards.filter((row) => row.firstFrameImage || row.lastFrameImage || row.composedImage)
   const storyboardVideos = storyboards.filter((row) => row.videoUrl)
@@ -222,14 +241,44 @@ export function buildEpisodePipelineContract(episodeId: number): PipelineContrac
   if (storyboards.length > 0 && storyboardsWithSpeech.length === 0) {
     dubbingState = 'not_applicable'
   } else if (storyboardsWithSpeech.length > 0) {
-    dubbingState = storyboardsWithTts.length >= storyboardsWithSpeech.length ? 'complete' : 'blocked'
+    if (storyboardsWithInvalidTts.length > 0) {
+      dubbingState = 'blocked'
+    } else {
+      dubbingState = summarizeCount(storyboardsWithTts.length, storyboardsWithSpeech.length)
+    }
   }
   stages.dubbing = stage('dubbing', dubbingState, {
     count: storyboardsWithTts.length,
     total: storyboardsWithSpeech.length,
+    blocked: dubbingState === 'blocked',
+    issues: storyboardsWithInvalidTts.map((row) => ({
+      code: 'invalid_tts_audio',
+      severity: 'error',
+      message: `Audio TTS da tomada #${row.storyboardNumber} nao foi encontrado no armazenamento.`,
+      entityType: 'storyboard',
+      entityId: row.id,
+    })),
   })
 
-  const visualTotal = characters.length + scenes.length + storyboards.length
+  stages.character_visuals = stage('character_visuals', summarizeCount(characterVisuals.length, visualCharacters.length), {
+    count: characterVisuals.length,
+    total: visualCharacters.length,
+    meta: {
+      ignoredNarrators: characters.length - visualCharacters.length,
+    },
+  })
+
+  stages.scene_visuals = stage('scene_visuals', summarizeCount(sceneVisuals.length, scenes.length), {
+    count: sceneVisuals.length,
+    total: scenes.length,
+  })
+
+  stages.storyboard_frames = stage('storyboard_frames', summarizeCount(storyboardFrames.length, storyboards.length), {
+    count: storyboardFrames.length,
+    total: storyboards.length,
+  })
+
+  const visualTotal = visualCharacters.length + scenes.length + storyboards.length
   const visualReady = characterVisuals.length + sceneVisuals.length + storyboardFrames.length
   stages.visual_assets = stage('visual_assets', summarizeCount(visualReady, visualTotal), {
     count: visualReady,
@@ -260,16 +309,22 @@ export function buildEpisodePipelineContract(episodeId: number): PipelineContrac
     },
   })
 
-  stages.audio_assets = audioIssues.some((issue) => issue.severity === 'error')
+  const hasAudioCoverageError = audioIssues.some((issue) => issue.severity === 'error')
+  const hasBlockingAudioIssue = audioIssues.some(audioIssueBlocksStage)
+  const audioAssetState = hasAudioCoverageError
+    ? readyAudioCueCount > 0 ? 'in_progress' : 'not_started'
+    : allAudioCues.length ? summarizeCount(readyAudioCueCount, allAudioCues.length) : 'not_started'
+
+  stages.audio_assets = hasBlockingAudioIssue
     ? stage('audio_assets', 'blocked', {
-      blocked: true,
-      issues: audioIssues,
-      count: readyAudioCueCount,
-      total: allAudioCues.length,
-    })
+        blocked: true,
+        issues: audioIssues,
+        count: readyAudioCueCount,
+        total: allAudioCues.length,
+      })
     : stage(
       'audio_assets',
-      allAudioCues.length ? summarizeCount(readyAudioCueCount, allAudioCues.length) : 'not_started',
+      audioAssetState,
       {
         blocked: false,
         issues: audioIssues,
@@ -344,14 +399,26 @@ export function buildEpisodePipelineContract(episodeId: number): PipelineContrac
       count: storyboards.length,
     },
     generate_images: {
-      status: stages.visual_assets.status === 'done'
+      status: stages.storyboard_frames.status === 'done'
         ? 'done'
-        : visualReady > 0
+        : storyboardFrames.length > 0
           ? 'partial'
           : 'pending',
-      state: stages.visual_assets.state,
+      state: stages.storyboard_frames.state,
       completed: storyboardFrames.length,
       total: storyboards.length,
+    },
+    generate_character_images: {
+      status: stages.character_visuals.status,
+      state: stages.character_visuals.state,
+      completed: characterVisuals.length,
+      total: visualCharacters.length,
+    },
+    generate_scene_images: {
+      status: stages.scene_visuals.status,
+      state: stages.scene_visuals.state,
+      completed: sceneVisuals.length,
+      total: scenes.length,
     },
     review_storyboards: {
       status: stages.review.state === 'complete'
@@ -405,7 +472,9 @@ function selectNextAction(stages: Record<string, PipelineStageSummary>) {
     ['voice_assignment', 'Assign voices'],
     ['dubbing', 'Generate TTS'],
     ['audio_assets', 'Attach score and ambience'],
-    ['visual_assets', 'Generate visual assets'],
+    ['character_visuals', 'Generate character visuals'],
+    ['scene_visuals', 'Generate scene visuals'],
+    ['storyboard_frames', 'Generate storyboard frames'],
     ['review', 'Review storyboard assets'],
     ['videos', 'Generate videos'],
     ['composition', 'Compose shots'],

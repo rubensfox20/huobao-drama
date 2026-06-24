@@ -58,6 +58,7 @@ app.post('/', async (c) => {
       referenceImages: Array.isArray(body.reference_images) ? body.reference_images : [],
     })
     const validation = validateVisualPrompt(prepared.prompt, 'image_prompt')
+    const requestedSize = resolveRequestedImageSize(body.size, body.aspect_ratio)
     const generation = await generateImage({
       storyboardId: body.storyboard_id,
       dramaId: body.drama_id,
@@ -66,7 +67,7 @@ app.post('/', async (c) => {
       characterId: body.character_id,
       prompt: prepared.prompt,
       model: body.model,
-      size: body.size,
+      size: requestedSize,
       seed: prepared.seed,
       referenceImages: prepared.referenceImages,
       frameType: body.frame_type,
@@ -151,5 +152,25 @@ app.delete('/:id', async (c) => {
   db.delete(schema.imageGenerations).where(eq(schema.imageGenerations.id, id)).run()
   return success(c)
 })
+
+function resolveRequestedImageSize(size: unknown, aspectRatio: unknown) {
+  const rawSize = String(size || '').trim()
+  if (/^\d+x\d+$/i.test(rawSize)) return rawSize
+
+  const ratio = normalizeAspectRatio(aspectRatio)
+  const longEdge = String(rawSize).toUpperCase() === '4K' ? 2048 : 1536
+  const [rw, rh] = ratio.split(':').map(value => Number(value))
+  if (!rw || !rh) return rawSize || '1024x1536'
+
+  if (rw === rh) return `${longEdge}x${longEdge}`
+  if (rw > rh) return `${longEdge}x${Math.round(longEdge * rh / rw)}`
+  return `${Math.round(longEdge * rw / rh)}x${longEdge}`
+}
+
+function normalizeAspectRatio(value: unknown) {
+  const raw = String(value || '').trim()
+  if (raw === '16:9' || raw === '21:9' || raw === '4:3' || raw === '3:4' || raw === '1:1' || raw === '9:16') return raw
+  return '9:16'
+}
 
 export default app

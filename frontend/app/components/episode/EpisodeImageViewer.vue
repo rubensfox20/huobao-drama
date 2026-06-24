@@ -68,7 +68,7 @@ const displayTitle = computed(() => props.title || props.defaultTitle)
   flex: 1;
   min-width: 0;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-1);
   font-family: var(--font-display);
 }

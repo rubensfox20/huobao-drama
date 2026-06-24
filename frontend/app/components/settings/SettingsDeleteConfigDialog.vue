@@ -66,7 +66,7 @@ defineEmits(['close', 'confirm'])
 .modal-title {
   font-family: var(--font-display);
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .modal-desc {
@@ -127,7 +127,7 @@ defineEmits(['close', 'confirm'])
 .delete-target-label {
   grid-column: 1 / -1;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-3);

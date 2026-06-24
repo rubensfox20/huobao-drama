@@ -894,7 +894,7 @@ const serviceTypes = [
 ]
 const providers = ['ali', 'chatfire', 'gemini', 'github-copilot', 'huggingface', 'leonardo', 'minimax', 'openai', 'openai-codex', 'openrouter', 'vidu', 'volcengine']
 const providerSelectOptions = computed(() => providers
-  .filter((provider) => cfgForm.service_type === 'text' || !isConnectionBackedProvider(provider))
+  .filter((provider) => cfgForm.service_type === 'text' || (cfgForm.service_type === 'image' && provider === 'openai-codex') || !isConnectionBackedProvider(provider))
   .map((provider) => ({ label: provider, value: provider })))
 const serviceMeta = {
   text: { label: settings.services.text, desc: settings.serviceMeta.text },
@@ -907,10 +907,12 @@ const providerPresets = {
     gemini: { label: settings.presetLabels.geminiRecommended, baseUrl: 'https://generativelanguage.googleapis.com', models: ['gemini-2.5-flash-lite'] },
     'github-copilot': { label: settings.presetLabels.githubCopilotRecommended, baseUrl: 'https://api.githubcopilot.com', models: ['github-copilot/gpt-4o-mini'] },
     openrouter: { label: settings.presetLabels.openrouterRecommended, baseUrl: 'https://openrouter.ai/api', models: ['google/gemini-3-flash-preview'] },
-    'openai-codex': { label: settings.presetLabels.openaiCodexRecommended, baseUrl: 'https://chatgpt.com/backend-api/codex', models: ['gpt-5.3-codex'] },
+    'openai-codex': { label: settings.presetLabels.openaiCodexRecommended, baseUrl: 'https://chatgpt.com/backend-api/codex', models: ['gpt-5.5'] },
     openai: { label: settings.presetLabels.openaiRecommended, baseUrl: 'https://api.openai.com', models: ['gpt-4.1-mini'] },
   },
   image: {
+    'openai-codex': { label: settings.presetLabels.openaiCodexRecommended, baseUrl: 'https://chatgpt.com/backend-api/codex', models: ['gpt-5.5'] },
+    openai: { label: settings.presetLabels.openaiRecommended, baseUrl: 'https://api.openai.com', models: ['gpt-image-1'] },
     gemini: { label: settings.presetLabels.geminiRecommended, baseUrl: 'https://generativelanguage.googleapis.com', models: ['gemini-2.5-flash-image'] },
     huggingface: { label: settings.presetLabels.huggingfaceRecommended, baseUrl: 'https://router.huggingface.co', models: ['black-forest-labs/FLUX.1-schnell'] },
     leonardo: { label: settings.presetLabels.leonardoRecommended, baseUrl: 'https://cloud.leonardo.ai', models: ['7b592283-e8a7-4c5a-9ba6-d18c31f258b9'] },
@@ -938,6 +940,7 @@ const quickSetupPresetCards = ref(QUICK_SETUP_DEFAULTS.map((preset) => ({ ...pre
 const endpointPrefixes = {
   chatfire: '/v1',
   openai: '/v1',
+  'openai-codex': '',
   openrouter: '/v1',
   minimax: '/v1',
   gemini: '/v1beta',
@@ -979,7 +982,7 @@ function fmtModels(models) {
 
 function getConnectionModels(provider, connection) {
   if (provider === 'openai-codex') {
-    return ['gpt-5.4']
+    return ['gpt-5.5', 'gpt-5.4']
   }
 
   const models = Array.isArray(connection?.available_models)
@@ -1898,7 +1901,7 @@ onBeforeUnmount(() => {
 }
 .nav-group { display: flex; flex-direction: column; gap: 4px; }
 .nav-group-label {
-  font-size: 10px; font-weight: 700; color: var(--text-3);
+  font-size: 10px; font-weight: 600; color: var(--text-3);
   letter-spacing: 0.12em; text-transform: uppercase; padding: 0 10px 4px;
 }
 .nav-item {
@@ -1970,7 +1973,7 @@ onBeforeUnmount(() => {
 .settings-brand-fallback {
   font-family: var(--font-display);
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--accent-text);
   line-height: 1;
 }
@@ -1982,18 +1985,18 @@ onBeforeUnmount(() => {
 }
 .settings-brand-kicker {
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-3);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 .settings-brand-name {
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-1);
   font-family: var(--font-display);
 }
-.settings-title { font-family: var(--font-display); font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+.settings-title { font-family: var(--font-display); font-size: 22px; font-weight: 600; letter-spacing: 0; }
 .settings-desc { font-size: 13px; color: var(--text-2); margin-top: 4px; }
 
 /* AI Config */
@@ -2012,7 +2015,7 @@ onBeforeUnmount(() => {
 .setup-panel-head.compact { margin-bottom: 12px; }
 .setup-kicker {
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-3);
@@ -2020,7 +2023,7 @@ onBeforeUnmount(() => {
 }
 .setup-title {
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-0);
 }
 .setup-desc {
@@ -2110,7 +2113,7 @@ onBeforeUnmount(() => {
   overflow-y: auto;
 }
 .skills-agent-title {
-  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em;
   color: var(--text-3); padding: 14px 14px 8px;
 }
 .skills-agent-item {
@@ -2124,7 +2127,7 @@ onBeforeUnmount(() => {
 .skills-agent-item.active { background: var(--accent-bg); color: var(--accent-text); font-weight: 600; }
 .skills-agent-label { flex: 1; }
 .skill-count-badge {
-  font-size: 10px; font-weight: 700; font-family: var(--font-mono);
+  font-size: 10px; font-weight: 600; font-family: var(--font-mono);
   background: var(--accent-bg); color: var(--accent-text);
   padding: 1px 5px; border-radius: 99px;
 }
@@ -2541,7 +2544,7 @@ onBeforeUnmount(() => {
 
 .overlay { position: fixed; inset: 0; background: rgba(34,45,66,0.32); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 100; animation: fadeIn 0.18s var(--ease-out); }
 .modal { padding: 28px; width: 420px; display: flex; flex-direction: column; gap: 12px; box-shadow: var(--shadow-elevated); }
-.modal-title { font-family: var(--font-display); font-size: 18px; font-weight: 700; }
+.modal-title { font-family: var(--font-display); font-size: 18px; font-weight: 600; }
 .modal-desc { font-size: 13px; color: var(--text-3); line-height: 1.6; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
 .huobao-grid {
@@ -2556,6 +2559,71 @@ onBeforeUnmount(() => {
 }
 .huobao-grid .field-hint a:hover {
   text-decoration: underline;
+}
+
+/* Professional typography pass */
+.settings-layout {
+  font-size: var(--type-base);
+  line-height: var(--leading-ui);
+}
+
+.settings-title,
+.modal-title,
+.card-title,
+.section-title {
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0;
+}
+
+.settings-title {
+  font-size: var(--type-2xl);
+  line-height: var(--leading-tight);
+}
+
+.modal-title,
+.card-title {
+  font-size: var(--type-xl);
+}
+
+.nav-group-label,
+.field-label,
+.agent-type-badge,
+.config-badge,
+.skill-badge {
+  font-size: var(--type-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+}
+
+.nav-item,
+.section-title,
+.config-provider,
+.preset-service,
+.field-input,
+.field-select,
+.field-textarea {
+  font-size: var(--type-md);
+  font-weight: var(--weight-medium);
+}
+
+.settings-desc,
+.section-subtitle,
+.field-hint,
+.preset-model,
+.preset-base,
+.config-meta,
+.dim {
+  font-size: var(--type-sm);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-copy);
+}
+
+.btn,
+.modal-actions button,
+.admin-session-actions button,
+.admin-session-form button {
+  font-weight: var(--weight-medium);
 }
 
 @media (max-width: 900px) {

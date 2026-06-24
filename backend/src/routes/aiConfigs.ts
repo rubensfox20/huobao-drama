@@ -5,7 +5,7 @@ import { success, notFound, created, now } from '../utils/response.js'
 import { toSnakeCase } from '../utils/transform.js'
 import { redactUrl, logTaskError, logTaskProgress, logTaskSuccess } from '../utils/task-logger.js'
 import { buildProviderProbe } from '../services/provider-probe.js'
-import { defaultConnectionBaseUrl, defaultConnectionModel, isConnectionBackedTextProvider } from '../services/provider-connections/shared.js'
+import { defaultConnectionBaseUrl, defaultConnectionModel, isConnectionBackedTextProvider, OPENAI_CODEX_BASE_URL } from '../services/provider-connections/shared.js'
 import { probeConnectionBackedTextProvider } from '../services/text-provider.js'
 import { parseJsonBody, parseParams, parseQuery, z, idParamSchema } from '../utils/validation.js'
 import { requireAdminAuth } from '../middleware/admin-auth.js'
@@ -83,7 +83,7 @@ async function executeConfigProbe(input: {
   apiKey: string
   model?: string[] | string
 }) {
-  if (input.serviceType === 'text' && isConnectionBackedTextProvider(input.provider)) {
+  if ((input.serviceType === 'text' || input.serviceType === 'image') && input.provider === 'openai-codex') {
     const snapshot = await probeConnectionBackedTextProvider(input.provider, pickTestModel(input.model))
     const service = snapshot.services?.[0]
     return {
@@ -197,9 +197,10 @@ app.post('/', async (c) => {
   const body = parsed.data
   const ts = now()
   const isConnectionBacked = body.service_type === 'text' && isConnectionBackedTextProvider(body.provider)
+  const isCodexImage = body.service_type === 'image' && body.provider === 'openai-codex'
   const connectionProvider = body.provider as ConnectableProvider
-  const defaultBaseUrl = isConnectionBacked ? defaultConnectionBaseUrl(connectionProvider) : ''
-  const defaultModel = isConnectionBacked ? defaultConnectionModel(connectionProvider) : ''
+  const defaultBaseUrl = isConnectionBacked ? defaultConnectionBaseUrl(connectionProvider) : isCodexImage ? OPENAI_CODEX_BASE_URL : ''
+  const defaultModel = isConnectionBacked ? defaultConnectionModel(connectionProvider) : isCodexImage ? 'gpt-5.5' : ''
   const hasExistingActiveTextConfig = body.service_type === 'text'
     && db.select().from(schema.aiServiceConfigs)
       .where(eq(schema.aiServiceConfigs.serviceType, 'text'))

@@ -340,7 +340,7 @@ function resolveTextRequestTimeoutMs(config: ResolvedTextConfig, params: TextGen
   }
 
   if (config.provider === 'openai-codex') {
-    if (operation.includes('storyboard') || operation.includes('rewrite') || operation.includes('discovery')) {
+    if (operation.includes('storyboard') || operation.includes('rewrite') || operation.includes('discovery') || operation.includes('story-studio')) {
       return 120_000
     }
     if (params.jsonOnly || apiMode === 'responses') {
@@ -350,13 +350,13 @@ function resolveTextRequestTimeoutMs(config: ResolvedTextConfig, params: TextGen
   }
 
   if (config.provider === 'github-copilot') {
-    if (operation.includes('storyboard') || operation.includes('rewrite') || operation.includes('discovery')) {
+    if (operation.includes('storyboard') || operation.includes('rewrite') || operation.includes('discovery') || operation.includes('story-studio')) {
       return 90_000
     }
     return 45_000
   }
 
-  if (operation.includes('storyboard') || operation.includes('rewrite') || operation.includes('discovery')) {
+  if (operation.includes('storyboard') || operation.includes('rewrite') || operation.includes('discovery') || operation.includes('story-studio')) {
     return 60_000
   }
 

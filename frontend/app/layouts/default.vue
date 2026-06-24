@@ -98,16 +98,16 @@ const { messages } = useAppI18n()
 .brand-fallback {
   font-family: var(--font-display);
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--accent-text);
   line-height: 1;
 }
 .brand-text { display: flex; flex-direction: column; align-items: flex-start; line-height: 1; }
 .brand-name {
   font-family: var(--font-display);
-  font-size: 15px; font-weight: 700;
+  font-size: 15px; font-weight: 600;
   color: var(--text-0);
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 .brand-sub {
   font-size: 10px; font-weight: 400;

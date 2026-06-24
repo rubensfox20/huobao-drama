@@ -26,6 +26,19 @@ const createDramaSchema = z.object({
   total_episodes: z.coerce.number().int().positive().optional().default(1),
 })
 
+function parseMetadata(value?: string | null) {
+  if (!value) return null
+  try {
+    return JSON.parse(value) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+function normalizeGenerationKey(value: unknown) {
+  return String(value || '').trim().toLowerCase()
+}
+
 const updateDramaSchema = z.object({
   title: z.string().trim().min(1).optional(),
   description: z.string().optional(),
@@ -317,6 +330,16 @@ app.post('/', async (c) => {
   if (!parsed.ok) return parsed.response
 
   const body = parsed.data
+  const generationKey = normalizeGenerationKey(parseMetadata(body.metadata)?.generation_key)
+  if (generationKey) {
+    const existing = db.select().from(schema.dramas)
+      .where(isNull(schema.dramas.deletedAt))
+      .orderBy(desc(schema.dramas.updatedAt))
+      .all()
+      .find(row => normalizeGenerationKey(parseMetadata(row.metadata)?.generation_key) === generationKey)
+    if (existing) return success(c, toSnakeCase(existing))
+  }
+
   const ts = now()
   const result = db.insert(schema.dramas).values({
     title: body.title,

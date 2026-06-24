@@ -4937,8 +4937,8 @@ function createProductionNode(type) {
   canvasNodePositions.value = { ...canvasNodePositions.value, [canvasNodeKey(target, nextIndex)]: defaultCanvasNodePosition(target, nextIndex) }
   activeProductionTab.value = target
   addNodeMenuOpen.value = false
-  productionLibraryOpen.value = true
   persistAgentState('production_assets_ready', true).catch(() => {})
+  focusCanvasAsset(list[nextIndex], nextIndex)
   return nextIndex
 }
 

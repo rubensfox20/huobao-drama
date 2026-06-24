@@ -145,6 +145,12 @@
           </div>
 
           <div v-else class="production-library-grid" :class="'library-' + activeProductionTab">
+            <button v-if="activeProductionTab === 'objects' || activeProductionTab === 'media'" class="library-asset-card library-inline-create" type="button" @click="createProductionNode(activeProductionTab)">
+              <div class="library-asset-preview library-create-preview">
+                <div class="dashed-circle"><Plus :size="22" /></div>
+              </div>
+              <strong>{{ activeProductionTab === 'objects' ? 'Novo objeto' : 'Nova mídia' }}</strong>
+            </button>
             <button v-for="(item, index) in activeProductionItems" :key="'lib-' + activeProductionTab + '-' + index" class="library-asset-card" type="button" @click="selectProductionLibraryAsset(item, index)">
               <div class="library-asset-preview">
                 <img v-if="productionAssetImageSource(item)" :src="productionAssetImageSource(item)" :alt="item.name" />
@@ -11141,6 +11147,58 @@ onBeforeUnmount(() => {
   color: #8c939a;
   font-size: 11.5px;
   font-weight: 600;
+}
+
+/* Objects & Media Tabs Specific Styles */
+.library-objects .library-asset-card,
+.library-media .library-asset-card {
+  background: transparent;
+  padding: 0;
+}
+
+.library-objects .library-asset-card:hover,
+.library-objects .library-asset-card:focus-visible,
+.library-media .library-asset-card:hover,
+.library-media .library-asset-card:focus-visible {
+  background: transparent;
+  box-shadow: none;
+}
+
+.library-objects .library-asset-preview,
+.library-media .library-asset-preview {
+  aspect-ratio: 1 / 1;
+  border-radius: 14px;
+  margin-bottom: 8px;
+}
+
+.library-objects .library-asset-card strong,
+.library-media .library-asset-card strong {
+  padding: 0 4px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.library-objects .library-asset-card span,
+.library-media .library-asset-card span {
+  display: none;
+}
+
+.library-inline-create .library-create-preview {
+  background: #fff;
+}
+
+.library-inline-create strong {
+  color: #8c939a !important;
+}
+
+.dashed-circle {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1.5px dashed #bfc4c8;
+  border-radius: 50%;
+  color: #939aa1;
 }
 
 @media (max-width: 620px) {

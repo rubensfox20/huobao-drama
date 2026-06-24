@@ -11077,12 +11077,11 @@ onBeforeUnmount(() => {
   display: block;
   appearance: none;
   -webkit-appearance: none;
-  padding: 5px 5px 12px;
+  padding: 4px 4px 12px;
   border: 0;
-  border-radius: 18px;
+  border-radius: 20px;
   background: #fff;
   color: #1f2429;
-  box-shadow: 0 12px 24px rgba(28, 34, 40, 0.1);
   text-align: left;
   cursor: pointer;
   transition: box-shadow 0.16s ease, transform 0.16s ease, background 0.16s ease;
@@ -11092,7 +11091,7 @@ onBeforeUnmount(() => {
 .library-asset-card:focus-visible {
   z-index: 3;
   background: #fff;
-  box-shadow: 0 16px 30px rgba(28, 34, 40, 0.14);
+  box-shadow: 0 2px 8px rgba(28, 34, 40, 0.10);
   outline: 0;
   transform: translateY(-1px);
 }
@@ -11105,8 +11104,8 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   margin: 0 0 10px;
-  border-radius: 16px 16px 14px 14px;
-  background: #f1f2f3;
+  border-radius: 17px;
+  background: #f0f0f0;
   color: #d6dbe0;
   overflow: hidden;
 }

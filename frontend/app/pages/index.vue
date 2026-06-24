@@ -11097,7 +11097,9 @@ onBeforeUnmount(() => {
   max-height: calc(100% - 54px);
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 4px;
+  padding: 12px;
+  margin: -12px;
+  padding-bottom: 32px;
 }
 
 .production-library-grid.library-scenes {

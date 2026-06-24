@@ -4187,6 +4187,9 @@ function startCanvasPan(event) {
     canvasNodeContextMenu.value = { open: false, x: 0, y: 0, type: '', index: -1 }
     canvasContextDropPosition.value = null
   }
+  if (productionLibraryOpen.value && !target?.closest?.('.production-library-panel') && !target?.closest?.('.canvas-tool-button')) {
+    productionLibraryOpen.value = false
+  }
 
   if (shouldIgnoreCanvasPan(target)) return
 

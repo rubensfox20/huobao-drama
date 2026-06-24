@@ -136,15 +136,14 @@
           </nav>
 
           <div v-if="(activeProductionTab === 'objects' || activeProductionTab === 'media') && !activeProductionItems.length" class="production-empty-library">
-            <div class="library-create-wrapper empty-create-wrapper">
-              <button class="library-create-card" type="button" @click.stop="showLibraryCreateMenu = !showLibraryCreateMenu"><Plus :size="27" /></button>
-              <div v-if="showLibraryCreateMenu" class="dropdown-overlay" @click.stop="showLibraryCreateMenu = false"></div>
+            <div class="library-create-wrapper empty-create-wrapper" @mouseenter="showLibraryCreateMenu = true" @mouseleave="showLibraryCreateMenu = false">
+              <button class="library-create-card" type="button" @click="createProductionNode(activeProductionTab)"><Plus :size="27" /></button>
               <div v-if="showLibraryCreateMenu" class="library-create-dropdown" style="top: 140px; left: 50%; transform: translateX(-50%);">
-                <button type="button" @click="createProductionNode(activeProductionTab); showLibraryCreateMenu = false">
+                <button type="button" @click="openCanvasImageUpload(activeProductionTab); showLibraryCreateMenu = false">
                   <UploadCloud :size="16" />
                   <span>Fazer upload de arquivo local</span>
                 </button>
-                <button type="button" @click="createProductionNode(activeProductionTab); showLibraryCreateMenu = false">
+                <button type="button" @click="openCanvasImageLibrary(activeProductionTab); showLibraryCreateMenu = false">
                   <Folder :size="16" />
                   <span>Escolher da biblioteca de assets</span>
                 </button>
@@ -162,20 +161,19 @@
           </div>
 
           <div v-else class="production-library-grid" :class="'library-' + activeProductionTab">
-            <div v-if="activeProductionTab === 'objects' || activeProductionTab === 'media'" class="library-create-wrapper inline-create-wrapper">
-              <button class="library-asset-card library-inline-create" type="button" @click.stop="showLibraryCreateMenu = !showLibraryCreateMenu">
+            <div v-if="activeProductionTab === 'objects' || activeProductionTab === 'media'" class="library-create-wrapper inline-create-wrapper" @mouseenter="showLibraryCreateMenu = true" @mouseleave="showLibraryCreateMenu = false">
+              <button class="library-asset-card library-inline-create" type="button" @click="createProductionNode(activeProductionTab)">
                 <div class="library-asset-preview library-create-preview">
                   <div class="dashed-circle"><Plus :size="22" /></div>
                 </div>
                 <strong>{{ activeProductionTab === 'objects' ? 'Novo objeto' : 'Nova mídia' }}</strong>
               </button>
-              <div v-if="showLibraryCreateMenu" class="dropdown-overlay" @click.stop="showLibraryCreateMenu = false"></div>
               <div v-if="showLibraryCreateMenu" class="library-create-dropdown">
-                <button type="button" @click="createProductionNode(activeProductionTab); showLibraryCreateMenu = false">
+                <button type="button" @click="openCanvasImageUpload(activeProductionTab); showLibraryCreateMenu = false">
                   <UploadCloud :size="16" />
                   <span>Fazer upload de arquivo local</span>
                 </button>
-                <button type="button" @click="createProductionNode(activeProductionTab); showLibraryCreateMenu = false">
+                <button type="button" @click="openCanvasImageLibrary(activeProductionTab); showLibraryCreateMenu = false">
                   <Folder :size="16" />
                   <span>Escolher da biblioteca de assets</span>
                 </button>
@@ -11238,6 +11236,11 @@ onBeforeUnmount(() => {
 
 .library-create-wrapper {
   position: relative;
+  width: 100%;
+}
+
+.library-inline-create {
+  width: 100%;
 }
 
 .dropdown-overlay {

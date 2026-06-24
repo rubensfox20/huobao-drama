@@ -2256,13 +2256,40 @@ const canvasMentionGroups = computed(() => [
   { id: 'objects', label: 'Object', icon: Sparkles },
   { id: 'media', label: 'Image', icon: Image },
 ])
+function getCanvasGroupHeadItem(type, index) {
+  const items = productionAssets.value[type]
+  if (!items) return null
+
+  let currentIndex = index
+  let foundPredecessor = true
+  const visited = new Set([currentIndex])
+  
+  while (foundPredecessor) {
+    foundPredecessor = false
+    const predecessorConn = canvasConnections.value.find(conn => 
+      conn.to === `${type}:${currentIndex}` && conn.from?.startsWith(`${type}:`)
+    )
+    if (predecessorConn) {
+      const fromIdx = parseInt(predecessorConn.from.split(':')[1])
+      if (visited.has(fromIdx)) break
+      currentIndex = fromIdx
+      visited.add(currentIndex)
+      foundPredecessor = true
+    }
+  }
+
+  return items[currentIndex]
+}
+
 function canvasMentionItem(group, item, index) {
+  const headItem = getCanvasGroupHeadItem(group, index) || item
+
   return {
     key: `${group}:${index}`,
     type: group,
     index,
-    name: item?.name || (group === 'roles' ? 'Role' : group === 'scenes' ? 'Scene' : group === 'objects' ? 'Object' : 'Image') + ' ' + (index + 1),
-    source: productionAssetImageSource(item),
+    name: headItem?.name || item?.name || (group === 'roles' ? 'Role' : group === 'scenes' ? 'Scene' : group === 'objects' ? 'Object' : 'Image') + ' ' + (index + 1),
+    source: productionAssetImageSource(headItem) || productionAssetImageSource(item),
   }
 }
 

@@ -5727,12 +5727,36 @@ function updateCanvasPromptMentionChips() {
   Array.from(editor.querySelectorAll('.canvas-prompt-mention-chip'))
     .map((chip, index) => {
       if (!chip.dataset.mentionId) chip.dataset.mentionId = `mention-${++canvasMentionIdSeed}`
+      
+      const mentionKey = chip.dataset.mentionKey
+      let name = chip.dataset.mentionName || chip.textContent || ''
+      let source = chip.dataset.mentionSource || ''
+      let type = chip.dataset.mentionType || 'media'
+
+      if (mentionKey) {
+        const parts = mentionKey.split(':')
+        const kType = parts[0]
+        const kIndex = parseInt(parts[1])
+        if (productionAssets.value[kType] && productionAssets.value[kType][kIndex]) {
+          const dynamicItem = canvasMentionItem(kType, productionAssets.value[kType][kIndex], kIndex)
+          name = dynamicItem.name
+          source = dynamicItem.source || ''
+          type = dynamicItem.type
+          
+          chip.dataset.mentionName = name
+          chip.dataset.mentionSource = source
+          if (chip.textContent !== `@${name}`) {
+            chip.textContent = `@${name}`
+          }
+        }
+      }
+
       return {
-        key: `${chip.dataset.mentionType || 'media'}:${chip.dataset.mentionName || chip.textContent || ''}`,
+        key: mentionKey || `${type}:${name}`,
         id: chip.dataset.mentionId,
-        name: chip.dataset.mentionName || chip.textContent || '',
-        type: chip.dataset.mentionType || 'media',
-        source: chip.dataset.mentionSource || '',
+        name,
+        type,
+        source,
         label: `${index + 1}ª menção`,
       }
     })
@@ -6991,6 +7015,7 @@ watch([scriptDraft, episodeSummaries], () => {
 watch([productionAssets, canvasNodePositions, canvasConnections], () => {
   if (canvasDragState.value?.moved) return
   queueAgentAutosave(true)
+  updateCanvasPromptMentionChips()
 }, { deep: true })
 
 onBeforeUnmount(() => {

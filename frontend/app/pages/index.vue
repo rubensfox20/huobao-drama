@@ -138,7 +138,7 @@
           <div v-if="(activeProductionTab === 'objects' || activeProductionTab === 'media') && !activeProductionItems.length" class="production-empty-library">
             <div class="library-create-wrapper empty-create-wrapper" @mouseenter="showLibraryCreateMenu = true" @mouseleave="showLibraryCreateMenu = false">
               <button class="library-create-card" type="button" @click="createProductionNode(activeProductionTab)"><Plus :size="27" /></button>
-              <div v-if="showLibraryCreateMenu" class="library-create-dropdown" style="top: 140px; left: 50%; transform: translateX(-50%);">
+              <div v-if="showLibraryCreateMenu" class="library-create-dropdown" style="left: 50%; transform: translateX(-50%);">
                 <button type="button" @click="openCanvasImageUpload(activeProductionTab); showLibraryCreateMenu = false">
                   <UploadCloud :size="16" />
                   <span>Fazer upload de arquivo local</span>
@@ -11254,7 +11254,7 @@ onBeforeUnmount(() => {
 
 .library-create-dropdown {
   position: absolute;
-  top: 90px;
+  top: 100%;
   left: 0;
   z-index: 60;
   display: flex;

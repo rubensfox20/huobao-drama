@@ -10741,8 +10741,8 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 54;
   border: 1px solid rgba(0, 0, 0, 0.06);
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.14);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.04);
   backdrop-filter: blur(16px);
 }
 
@@ -11061,7 +11061,7 @@ onBeforeUnmount(() => {
 }
 
 .production-library-grid.library-scenes {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .production-library-grid::-webkit-scrollbar {
@@ -11077,7 +11077,7 @@ onBeforeUnmount(() => {
   display: block;
   appearance: none;
   -webkit-appearance: none;
-  padding: 4px 4px 12px;
+  padding: 3px 3px 19px;
   border: 0;
   border-radius: 20px;
   background: #fff;
@@ -11091,7 +11091,7 @@ onBeforeUnmount(() => {
 .library-asset-card:focus-visible {
   z-index: 3;
   background: #fff;
-  box-shadow: 0 2px 8px rgba(28, 34, 40, 0.10);
+  box-shadow: 4px 4px 18px rgba(28, 34, 40, 0.10);
   outline: 0;
   transform: translateY(-1px);
 }
@@ -11119,7 +11119,7 @@ onBeforeUnmount(() => {
 }
 
 .library-scenes .library-asset-preview {
-  aspect-ratio: 1 / 0.86;
+  aspect-ratio: 16 / 9;
 }
 
 .library-asset-card strong,

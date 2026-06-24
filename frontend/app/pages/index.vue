@@ -183,15 +183,15 @@
                 </button>
               </div>
             </div>
-            <button v-for="(item, index) in activeProductionItems" :key="'lib-' + activeProductionTab + '-' + index" class="library-asset-card" type="button" @click="selectProductionLibraryAsset(item, index)">
+            <button v-for="group in groupedActiveProductionItems" :key="'lib-' + activeProductionTab + '-' + group.index" class="library-asset-card" type="button" @click="selectProductionLibraryAsset(group.item, group.index)">
               <div class="library-asset-preview">
-                <img v-if="productionAssetImageSource(item)" :src="productionAssetImageSource(item)" :alt="item.name" />
+                <img v-if="productionAssetImageSource(group.item)" :src="productionAssetImageSource(group.item)" :alt="group.item.name" />
                 <CircleUserRound v-else-if="activeProductionTab === 'roles'" :size="46" />
                 <Sparkles v-else-if="activeProductionTab === 'objects'" :size="46" />
                 <Image v-else :size="50" />
               </div>
-              <strong>{{ item.name }}</strong>
-              <span>{{ productionAssetImageCount(item) }}</span>
+              <strong>{{ group.item.name }}</strong>
+              <span>{{ group.totalImages + (group.totalImages === 1 ? ' image total' : ' images total') }}</span>
             </button>
           </div>
         </section>
@@ -2132,6 +2132,59 @@ const productionTabs = computed(() => [
   { id: 'media', label: 'Mídia', count: productionAssets.value.media.length, icon: Grid3X3 },
 ])
 const activeProductionItems = computed(() => productionAssets.value[activeProductionTab.value] || [])
+
+const groupedActiveProductionItems = computed(() => {
+  const items = activeProductionItems.value
+  const type = activeProductionTab.value
+
+  const incoming = new Set()
+  const outgoing = new Map()
+
+  canvasConnections.value.forEach(conn => {
+    if (conn.from?.startsWith(type + ':') && conn.to?.startsWith(type + ':')) {
+      const fromIdx = parseInt(conn.from.split(':')[1])
+      const toIdx = parseInt(conn.to.split(':')[1])
+      incoming.add(toIdx)
+
+      if (!outgoing.has(fromIdx)) outgoing.set(fromIdx, [])
+      outgoing.get(fromIdx).push(toIdx)
+    }
+  })
+
+  const groups = []
+
+  items.forEach((item, index) => {
+    if (incoming.has(index)) return
+
+    let queue = outgoing.get(index) ? [...outgoing.get(index)] : []
+    let visited = new Set([index])
+    let sequenceLength = 1
+    let totalImages = item.images || 1
+
+    while (queue.length > 0) {
+      const nextIdx = queue.shift()
+      if (visited.has(nextIdx)) continue
+      visited.add(nextIdx)
+      sequenceLength++
+      const nextItem = items[nextIdx]
+      if (nextItem) totalImages += (nextItem.images || 1)
+      
+      if (outgoing.has(nextIdx)) {
+        queue.push(...outgoing.get(nextIdx))
+      }
+    }
+
+    groups.push({
+      item,
+      index,
+      sequenceLength,
+      totalImages
+    })
+  })
+
+  return groups
+})
+
 const activeProductionAssetKeys = computed(() => activeProductionItems.value.map((item, index) => productionAssetKey(item, index)))
 const allActiveProductionAssetsSelected = computed(() => activeProductionAssetKeys.value.length > 0 && activeProductionAssetKeys.value.every(key => selectedProductionAssetKeys.value.includes(key)))
 const roleEditorRoleOptions = computed(() => {

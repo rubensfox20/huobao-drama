@@ -124,7 +124,7 @@
 
         <section v-if="screenHelpOpen" class="screen-help-menu" @click.stop>
           <button type="button"><BookOpen :size="18" />Use tutorial</button>
-          <button type="button"><Keyboard :size="18" />Shortcut</button>
+          <button type="button" @click="shortcutsModalOpen = true; screenHelpOpen = false"><Keyboard :size="18" />Shortcut</button>
         </section>
 
         <section v-if="productionLibraryOpen" class="production-library-panel" @click.stop>
@@ -1587,6 +1587,82 @@
         </button>
       </div>
     </Teleport>
+    <Teleport to="body">
+      <div v-if="shortcutsModalOpen" class="pippit-overlay shortcuts-overlay" @click.self="shortcutsModalOpen = false">
+        <div class="shortcuts-modal" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+          <button class="shortcuts-close" type="button" aria-label="Fechar" @click="shortcutsModalOpen = false">
+            <X :size="20" />
+          </button>
+          
+          <div class="shortcuts-grid">
+            <div class="shortcuts-column">
+              <h3 id="shortcuts-title">Zoom</h3>
+              <div class="shortcut-item">
+                <span>Zoom in/out</span>
+                <div class="shortcut-keys">
+                  <kbd>Ctrl</kbd>
+                  <kbd>Roda do mouse</kbd>
+                </div>
+              </div>
+              <div class="shortcut-item">
+                <span>Zoom (Trackpad)</span>
+                <div class="shortcut-keys">
+                  <kbd>Pinça c/ 2 dedos</kbd>
+                </div>
+              </div>
+            </div>
+
+            <div class="shortcuts-column">
+              <h3>Mover canvas</h3>
+              <div class="shortcut-item">
+                <span>Mover</span>
+                <div class="shortcut-keys">
+                  <kbd>Clique esquerdo</kbd>
+                  <kbd>Arraste</kbd>
+                </div>
+              </div>
+              <div class="shortcut-item">
+                <span>Mover (Trackpad)</span>
+                <div class="shortcut-keys">
+                  <kbd>Deslize c/ 2 dedos</kbd>
+                </div>
+              </div>
+            </div>
+
+            <div class="shortcuts-column">
+              <h3>Outros</h3>
+              <div class="shortcut-item">
+                <span>Desfazer</span>
+                <div class="shortcut-keys">
+                  <kbd>Ctrl</kbd>
+                  <kbd>Z</kbd>
+                </div>
+              </div>
+              <div class="shortcut-item">
+                <span>Copiar</span>
+                <div class="shortcut-keys">
+                  <kbd>Ctrl</kbd>
+                  <kbd>C</kbd>
+                </div>
+              </div>
+              <div class="shortcut-item">
+                <span>Colar</span>
+                <div class="shortcut-keys">
+                  <kbd>Ctrl</kbd>
+                  <kbd>V</kbd>
+                </div>
+              </div>
+              <div class="shortcut-item">
+                <span>Excluir</span>
+                <div class="shortcut-keys">
+                  <kbd>Delete</kbd>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -1743,6 +1819,7 @@ const pendingProductionAssetDelete = ref(null)
 const productionLibraryOpen = ref(false)
 const addNodeMenuOpen = ref(false)
 let addNodeMenuCloseTimer = null
+const shortcutsModalOpen = ref(false)
 const screenHelpOpen = ref(false)
 const canvasContextMenuOpen = ref(false)
 const canvasContextDropPosition = ref(null)

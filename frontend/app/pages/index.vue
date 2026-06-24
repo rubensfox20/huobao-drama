@@ -11095,8 +11095,9 @@ onBeforeUnmount(() => {
   align-content: start;
   gap: 12px 14px;
   max-height: calc(100% - 54px);
-  overflow: visible;
-  scrollbar-width: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
 }
 
 .production-library-grid.library-scenes {
@@ -11104,7 +11105,16 @@ onBeforeUnmount(() => {
 }
 
 .production-library-grid::-webkit-scrollbar {
-  display: none;
+  width: 6px;
+}
+
+.production-library-grid::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+}
+
+.production-library-grid::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .library-asset-card {

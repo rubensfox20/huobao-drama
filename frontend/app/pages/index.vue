@@ -7089,6 +7089,7 @@ onBeforeUnmount(() => {
 .agent-topbar {
   position: sticky;
   top: 0;
+  cursor: default;
   z-index: 40;
   height: 56px;
   display: grid;
@@ -10712,6 +10713,7 @@ onBeforeUnmount(() => {
 .canvas-side-tools {
   position: fixed;
   top: 288px;
+  cursor: default;
   left: 16px;
   z-index: 55;
   width: 58px;
@@ -10779,6 +10781,7 @@ onBeforeUnmount(() => {
 .production-library-panel {
   position: fixed;
   z-index: 54;
+  cursor: default;
   border: 1px solid rgba(0, 0, 0, 0.06);
   background: rgba(255, 255, 255, 0.82);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.04);
@@ -10905,6 +10908,7 @@ onBeforeUnmount(() => {
 .canvas-context-menu {
   position: fixed;
   z-index: 76;
+  cursor: default;
   width: 244px;
   padding: 18px 10px 10px;
   border: 1px solid rgba(0, 0, 0, 0.05);
@@ -13826,6 +13830,7 @@ onBeforeUnmount(() => {
 .canvas-bottom-tools {
   position: fixed;
   left: 16px;
+  cursor: default;
   bottom: 18px;
   z-index: 55;
   height: 48px;

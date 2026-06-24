@@ -14304,15 +14304,22 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 16px;
   right: 16px;
-  background: transparent;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
   border: 0;
+  border-radius: 999px;
+  background: transparent;
   color: #7b848c;
   cursor: pointer;
-  padding: 4px;
+  padding: 0;
+  transition: all 0.2s ease;
 }
 
 .shortcuts-close:hover {
-  color: #1f252a;
+  background: #f6f6f6;
+  color: #111;
 }
 
 .shortcuts-grid {

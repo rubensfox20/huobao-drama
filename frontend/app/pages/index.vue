@@ -11249,6 +11249,7 @@ onBeforeUnmount(() => {
 .library-create-wrapper {
   position: relative;
   width: 100%;
+  z-index: 10;
 }
 
 .library-inline-create {

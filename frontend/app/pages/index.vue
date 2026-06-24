@@ -14318,10 +14318,12 @@ onBeforeUnmount(() => {
 .shortcuts-grid {
   display: flex;
   gap: 40px;
+  flex-wrap: wrap;
 }
 
 .shortcuts-column {
   flex: 1;
+  min-width: 220px;
 }
 
 .shortcuts-column h3 {
@@ -14336,6 +14338,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+  gap: 16px;
 }
 
 .shortcut-item span {
@@ -14347,6 +14350,8 @@ onBeforeUnmount(() => {
 .shortcut-keys {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .shortcut-keys kbd {
@@ -14358,5 +14363,6 @@ onBeforeUnmount(() => {
   font-family: inherit;
   font-weight: 600;
   color: #1f252a;
+  white-space: nowrap;
 }
 </style>

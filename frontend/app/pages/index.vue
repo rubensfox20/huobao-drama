@@ -141,11 +141,11 @@
               <div v-if="showLibraryCreateMenu" class="library-create-dropdown" style="left: 50%; transform: translateX(-50%);">
                 <button type="button" @click="openCanvasImageUpload(activeProductionTab); showLibraryCreateMenu = false">
                   <UploadCloud :size="16" />
-                  <span>Fazer upload de arquivo local</span>
+                  <span>Upload de arquivo local</span>
                 </button>
                 <button type="button" @click="openCanvasImageLibrary(activeProductionTab); showLibraryCreateMenu = false">
                   <Folder :size="16" />
-                  <span>Escolher da biblioteca de assets</span>
+                  <span>Escolher da biblioteca</span>
                 </button>
                 <button type="button" @click="createProductionNode(activeProductionTab); showLibraryCreateMenu = false">
                   <Image :size="16" />
@@ -171,11 +171,11 @@
               <div v-if="showLibraryCreateMenu" class="library-create-dropdown">
                 <button type="button" @click="openCanvasImageUpload(activeProductionTab); showLibraryCreateMenu = false">
                   <UploadCloud :size="16" />
-                  <span>Fazer upload de arquivo local</span>
+                  <span>Upload de arquivo local</span>
                 </button>
                 <button type="button" @click="openCanvasImageLibrary(activeProductionTab); showLibraryCreateMenu = false">
                   <Folder :size="16" />
-                  <span>Escolher da biblioteca de assets</span>
+                  <span>Escolher da biblioteca</span>
                 </button>
                 <button type="button" @click="createProductionNode(activeProductionTab); showLibraryCreateMenu = false">
                   <Image :size="16" />

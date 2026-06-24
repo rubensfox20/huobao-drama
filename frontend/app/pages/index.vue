@@ -11039,10 +11039,11 @@ onBeforeUnmount(() => {
   left: 82px;
   width: min(464px, calc(100vw - 106px));
   height: min(572px, calc(100vh - 78px));
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 22px 22px 24px;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
   border-radius: 36px;
+  overflow: hidden;
 }
 
 .production-library-panel::-webkit-scrollbar {
@@ -11063,6 +11064,8 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 24px;
   margin-bottom: 22px;
+  padding: 22px 22px 0;
+  flex-shrink: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -11108,7 +11111,23 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-content: start;
   gap: 12px 14px;
-  overflow: visible;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 22px 24px;
+}
+
+.production-library-grid::-webkit-scrollbar {
+  width: 6px;
+}
+
+.production-library-grid::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+}
+
+.production-library-grid::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .production-library-grid.library-scenes {
@@ -11306,12 +11325,18 @@ onBeforeUnmount(() => {
     left: 16px;
     width: calc(100vw - 32px);
     height: min(560px, calc(100vh - 112px));
-    padding: 20px 18px 22px;
+    padding: 0;
     border-radius: 30px;
   }
 
   .production-library-tabs {
     gap: 18px;
+    padding: 20px 18px 0;
+  }
+
+  .production-library-grid,
+  .production-empty-library {
+    padding: 0 18px 22px;
   }
 
   .production-library-grid,
@@ -11322,10 +11347,13 @@ onBeforeUnmount(() => {
 
 .production-empty-library {
   position: relative;
-  height: calc(100% - 54px);
+  flex: 1;
   display: grid;
   grid-template-rows: auto 1fr;
   align-items: start;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 22px 24px;
 }
 
 .library-create-card {

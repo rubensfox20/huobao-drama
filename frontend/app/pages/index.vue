@@ -4097,7 +4097,21 @@ function stopCanvasNodeDrag() {
 
 function startCanvasPan(event) {
   if (event.button !== undefined && event.button !== 0) return
-  if (shouldIgnoreCanvasPan(event.target)) return
+
+  const target = event.target
+  if (addNodeMenuOpen.value && !target?.closest?.('.add-node-menu') && !target?.closest?.('.canvas-add-button')) {
+    addNodeMenuOpen.value = false
+  }
+  if (screenHelpOpen.value && !target?.closest?.('.screen-help-menu') && !target?.closest?.('.canvas-tool-button')) {
+    screenHelpOpen.value = false
+  }
+  if (canvasContextMenuOpen.value && !target?.closest?.('.canvas-context-menu')) {
+    canvasContextMenuOpen.value = false
+    canvasNodeContextMenu.value = { open: false, x: 0, y: 0, type: '', index: -1 }
+    canvasContextDropPosition.value = null
+  }
+
+  if (shouldIgnoreCanvasPan(target)) return
 
   const viewport = canvasViewportRef.value
   if (!viewport) return

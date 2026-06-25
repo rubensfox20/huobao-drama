@@ -1530,7 +1530,7 @@
                 <em>{{ cinematicPartConfidence }}% confiança</em>
               </div>
               <strong>{{ selectedCinematicParts }}</strong>
-              <select v-model.number="selectedCinematicParts">
+              <select v-model.number="selectedCinematicParts" @change="resetCinematicQualityPreview">
                 <option v-for="option in cinematicPartOptions" :key="`part-${option.value}`" :value="option.value">
                   {{ option.value }} · {{ option.label }}
                 </option>
@@ -1545,7 +1545,7 @@
                 <em>{{ cinematicPanelConfidence }}% confiança</em>
               </div>
               <strong>{{ selectedCinematicPanels }}</strong>
-              <select v-model.number="selectedCinematicPanels">
+              <select v-model.number="selectedCinematicPanels" @change="resetCinematicQualityPreview">
                 <option v-for="option in cinematicPanelOptions" :key="`panel-${option.value}`" :value="option.value">
                   {{ option.value }} · {{ option.label }}
                 </option>
@@ -1562,6 +1562,34 @@
             <div><strong>{{ cinematicEstimate.video_prompts }}</strong><span>prompts de vídeo</span></div>
             <div><strong>{{ cinematicEstimate.review_load }}</strong><span>carga de revisão</span></div>
           </div>
+
+          <section class="cinematic-quality-panel" :class="{ ready: cinematicQualityPreview }">
+            <div class="cinematic-quality-copy">
+              <span>Controle de prompt</span>
+              <strong>{{ cinematicQualityPreview ? `${cinematicQualityScore}% qualidade` : 'Validar primeiro painel' }}</strong>
+              <p>{{ cinematicQualityPreview ? cinematicQualitySummary : 'Gera nota de painel, variacoes A/B, prompt refinado e adaptador Flux sem abrir outra tela.' }}</p>
+              <em v-if="cinematicQualityError">{{ cinematicQualityError }}</em>
+            </div>
+            <div class="cinematic-quality-actions">
+              <button type="button" :disabled="cinematicQualityLoading" @click="loadCinematicQualityPreview">
+                <LoaderCircle v-if="cinematicQualityLoading" :size="14" class="animate-spin" />
+                {{ cinematicQualityPreview ? 'Atualizar' : 'Ver qualidade' }}
+              </button>
+              <button v-if="cinematicQualityPreview" type="button" @click="copyCinematicPreviewPrompt">Copiar prompt</button>
+            </div>
+            <div v-if="cinematicQualityPreview" class="cinematic-quality-metrics">
+              <span><strong>{{ cinematicQualityRisk }}%</strong> risco</span>
+              <span><strong>{{ cinematicQualityVariants.length }}</strong> variacoes</span>
+              <span><strong>{{ cinematicQualityModel }}</strong> modelo</span>
+            </div>
+            <details v-if="cinematicQualityPreview" class="cinematic-quality-details">
+              <summary>Ver prompt refinado e alertas</summary>
+              <p>{{ cinematicQualityPrompt }}</p>
+              <ul v-if="cinematicQualityIssues.length">
+                <li v-for="issue in cinematicQualityIssues" :key="issue.message">{{ issue.message }}</li>
+              </ul>
+            </details>
+          </section>
 
           <div v-if="cinematicConfig.useAvatarZeroReferences" class="cinematic-reference-preview">
             <img src="/images/avatar-zero-design-sheet.jpg" alt="Design sheet Avatar.Zero" />
@@ -1926,6 +1954,10 @@ const cinematicPlan = ref(null)
 const cinematicDesignSheet = ref(null)
 const cinematicStoryboardPackage = ref(null)
 const cinematicImprovements = ref(null)
+const cinematicQualityPreview = ref(null)
+const cinematicProductionState = ref(null)
+const cinematicQualityLoading = ref(false)
+const cinematicQualityError = ref('')
 const cinematicPlanning = ref(false)
 const showCinematicReview = ref(false)
 const selectedCinematicParts = ref(4)
@@ -2242,6 +2274,28 @@ const cinematicEstimate = computed(() => {
     video_prompts: totalPanels,
     review_load: totalPanels <= 36 ? 'leve' : totalPanels <= 72 ? 'média' : 'alta',
   }
+})
+const cinematicQualityScore = computed(() => Math.round(Number(cinematicQualityPreview.value?.quality?.score || 0)))
+const cinematicQualityRisk = computed(() => Math.round(Number(cinematicQualityPreview.value?.quality?.generation_risk || 0)))
+const cinematicQualityVariants = computed(() => Array.isArray(cinematicQualityPreview.value?.variants) ? cinematicQualityPreview.value.variants : [])
+const cinematicQualityIssues = computed(() => {
+  const issues = Array.isArray(cinematicQualityPreview.value?.quality?.issues) ? cinematicQualityPreview.value.quality.issues : []
+  return issues.slice(0, 3)
+})
+const cinematicQualityPrompt = computed(() =>
+  String(
+    cinematicQualityPreview.value?.refined?.model_adapters?.[0]?.prompt
+    || cinematicQualityPreview.value?.refined?.image_prompt
+    || cinematicQualityPreview.value?.panel?.image_prompt
+    || '',
+  ).trim(),
+)
+const cinematicQualityModel = computed(() =>
+  cinematicQualityPreview.value?.refined?.model_adapters?.[0]?.model || 'Flux',
+)
+const cinematicQualitySummary = computed(() => {
+  const variantLabels = cinematicQualityVariants.value.map(item => item.label).filter(Boolean).slice(0, 2).join(', ')
+  return `Primeiro painel validado com ${cinematicQualityIssues.value.length} alerta(s). ${variantLabels ? `Variacoes: ${variantLabels}.` : 'Sem variacoes carregadas.'}`
 })
 const selectedLanguageCode = computed(() => selectedLanguage.value === 'English' ? 'EN' : 'PT')
 const agentRatioLabel = computed(() => scriptFlowActive.value ? scriptDraft.value.ratio : selectedRatio.value)
@@ -2930,6 +2984,82 @@ function loadAvatarZeroDemo() {
   toast.success('Demo Avatar.Zero carregada')
 }
 
+function cinematicQualitySelectionKey() {
+  return `${selectedCinematicParts.value}:${selectedCinematicPanels.value}:${cinematicConfig.durationSeconds}:${selectedRatio.value}`
+}
+
+function resetCinematicQualityPreview() {
+  cinematicQualityPreview.value = null
+  cinematicQualityError.value = ''
+  cinematicStoryboardPackage.value = null
+}
+
+function firstCinematicStoryboardPanel(storyboardPackage) {
+  return storyboardPackage?.parts?.[0]?.panels?.[0] || null
+}
+
+async function loadCinematicQualityPreview() {
+  if (!cinematicPlan.value || cinematicQualityLoading.value) return
+  cinematicQualityLoading.value = true
+  cinematicQualityError.value = ''
+
+  try {
+    const selectionKey = cinematicQualitySelectionKey()
+    const brief = cinematicBrief(aiPrompt.value)
+    const storyboardPackage = await storyStudioAPI.generateStoryboardPackage({
+      brief,
+      plan: cinematicPlan.value,
+      part_count: selectedCinematicParts.value,
+      panels_per_part: selectedCinematicPanels.value,
+    })
+    const panel = firstCinematicStoryboardPanel(storyboardPackage)
+    if (!panel) throw new Error('Nenhum painel foi criado para validar')
+
+    const [quality, variantsResult, refined] = await Promise.all([
+      storyStudioAPI.scorePanelQuality({
+        image_prompt: panel.image_prompt,
+        video_prompt: panel.video_prompt,
+        negative_prompt: panel.negative_prompt,
+        prompt_layers: panel.prompt_layers,
+        caption: panel.caption,
+        references: brief.references,
+        duration_seconds: Number(panel.timecode?.end_seconds || 0) - Number(panel.timecode?.start_seconds || 0),
+      }),
+      storyStudioAPI.generatePromptVariants({
+        prompt: panel.image_prompt,
+        negative_prompt: panel.negative_prompt,
+        modes: ['emotional', 'cinematic', 'slow'],
+      }),
+      storyStudioAPI.refinePanelPrompt({
+        panel,
+        instruction: 'Make the first panel prompt cleaner, more cinematic and safer for image generation while preserving continuity.',
+        variant_mode: 'cinematic',
+        target_model: 'Flux',
+      }),
+    ])
+
+    cinematicStoryboardPackage.value = storyboardPackage
+    cinematicQualityPreview.value = {
+      key: selectionKey,
+      panel,
+      quality,
+      variants: Array.isArray(variantsResult?.variants) ? variantsResult.variants : [],
+      refined,
+    }
+  } catch (error) {
+    cinematicQualityError.value = error.message || 'Nao foi possivel validar o primeiro painel'
+  } finally {
+    cinematicQualityLoading.value = false
+  }
+}
+
+async function copyCinematicPreviewPrompt() {
+  const prompt = cinematicQualityPrompt.value
+  if (!prompt) return
+  await navigator.clipboard?.writeText(prompt)
+  toast.success('Prompt copiado')
+}
+
 async function analyzeCinematicPlan() {
   const text = aiPrompt.value.trim()
   if (!text || cinematicPlanning.value) return
@@ -2943,6 +3073,9 @@ async function analyzeCinematicPlan() {
     cinematicDesignSheet.value = null
     cinematicStoryboardPackage.value = null
     cinematicImprovements.value = null
+    cinematicQualityPreview.value = null
+    cinematicProductionState.value = null
+    cinematicQualityError.value = ''
     selectedCinematicParts.value = Number(plan?.recommendations?.selected?.part_count || plan?.recommendations?.parts?.recommended || 4)
     selectedCinematicPanels.value = Number(plan?.recommendations?.selected?.panels_per_part || plan?.recommendations?.panels?.recommended || 8)
     showCinematicReview.value = true
@@ -3156,6 +3289,10 @@ async function startScriptGeneration(text) {
       metadata: serializedAgentMetadata('summary_generating'),
     })
     currentProjectId.value = project.id
+    if (cinematicPlan.value) {
+      const savedState = await storyStudioAPI.saveProductionState(project.id, cinematicProductionStatePayload('summary_generating')).catch(() => null)
+      if (savedState) cinematicProductionState.value = savedState
+    }
     await navigateTo({ path: '/', query: { project: String(project.id) } })
     const generated = await storyStudioAPI.generateSummary({
       idea: scriptDraft.value.idea,
@@ -3284,11 +3421,37 @@ function scriptDraftDescription() {
   return `${scriptDraft.value.idea}\n\n${scriptDraft.value.synopsis}`.trim().slice(0, 8000)
 }
 
+function cinematicProductionStatePayload(stage = currentAgentStage.value) {
+  return {
+    brief: cinematicBrief(scriptDraft.value.idea || aiPrompt.value),
+    plan: cinematicPlan.value,
+    design_sheet: cinematicDesignSheet.value,
+    storyboard_package: cinematicStoryboardPackage.value,
+    improvements: cinematicImprovements.value,
+    quality_preview: cinematicQualityPreview.value,
+    selection: {
+      parts_per_episode: selectedCinematicParts.value,
+      panels_per_part: selectedCinematicPanels.value,
+      stage,
+    },
+    generation_queue: cinematicPlan.value?.generation_queue || [],
+    model: cinematicPlan.value?.engine?.recommended_text_model || 'gpt-5.5',
+  }
+}
+
+function cinematicProductionMetadata(stage = currentAgentStage.value) {
+  const payload = cinematicProductionStatePayload(stage)
+  return cinematicProductionState.value
+    ? { ...cinematicProductionState.value, ...payload }
+    : payload
+}
+
 function serializedAgentMetadata(stage = currentAgentStage.value) {
   return JSON.stringify({
     agent_version: 1,
     generation_key: scriptGenerationKey(),
     stage,
+    cinematic_production: cinematicProductionMetadata(stage),
     cinematic_config: { ...cinematicConfig },
     cinematic_plan: cinematicPlan.value,
     cinematic_design_sheet: cinematicDesignSheet.value,
@@ -3329,6 +3492,9 @@ async function persistAgentState(stage = currentAgentStage.value, silent = false
       status: stage,
       metadata: serializedAgentMetadata(stage),
     })
+    if (cinematicPlan.value) {
+      cinematicProductionState.value = await storyStudioAPI.saveProductionState(currentProjectId.value, cinematicProductionStatePayload(stage))
+    }
   } catch (error) {
     if (!silent) toast.error(error.message || 'Não foi possível salvar o projeto')
     throw error
@@ -3913,10 +4079,124 @@ function inferSceneAssetsFromEpisodes() {
   return scenes.slice(0, 12)
 }
 
+function inferRolesFromEpisodes() {
+  const seen = new Set()
+  const roles = []
+  const PROSE_STOPWORDS = /^(corpo|marca|aura|sombra|simbolo|grito|forca|poder|olhar|sangue|dor|medo|raiva|amor|paz|gloria|destino|alma|fogo|agua|terra|ar|luz|som|tempo|espaco|vida|morte|maos|olhos|rosto|cor|forma|mente|coracao|pele|soul|hero cruzado|hero cruzada|desconhecido|desconhecida|misterioso|misteriosa|anônimo|anonima)$/i
+  const TIME_LOCATION_RE = /^(noite|dia|manhã|manha|tarde|madrugada|interior|exterior|int|ext|plano|cena|episódio|episodio|final|antes|depois|então|entao|agora|sempre|nunca|talvez|quando|onde|como|porque|por que|entretanto|porém|porem|mas|e|ou|se|não|nao|sim|bem|mal|aqui|ali|la|lá|onde)$/i
+  const DIALOGUE_STOPWORDS = /^(plano final|mensagem|legenda|subtitulo|subtitle|title|título|aption|caption|narrador|narração|narraçao|voice over|voz off|off|zoom|close|wide|medium|cut|fade|dissolve|enter|exit|sai|entra|olha|olhando|segurando|andando|correndo|sentado|deitado|caido|caído|ferido|morto|vivo|bebê|bebe|crianca|criança|idoso|jovem|adolescente)$/i
+  const BODY_WORDS = /^(corpo|rosto|olhos|olhar|maos|mãos|boca|nariz|testa|queixo|pescoço|ombros|bracos|braços|peitoral|costas|ventre|quadris|pernas|joelhos|pés|pe|cabelo|pele|sangue|suor|lágrimas|lagrimas|riso|sorriso|expressão|expressao)$/i
+
+  function isPlausibleCharacterName(name) {
+    if (!name || name.length < 2) return false
+    if (PROSE_STOPWORDS.test(name)) return false
+    if (BODY_WORDS.test(name)) return false
+    if (TIME_LOCATION_RE.test(name)) return false
+    if (DIALOGUE_STOPWORDS.test(name)) return false
+    const words = name.split(/\s+/)
+    if (words.length === 1 && !/^[A-ZÀ-Ú]{2,}$/.test(name)) return false
+    if (words.length === 1 && /^(eu|tu|ele|ela|nos|voces|voc|voce)$/i.test(name)) return false
+    return true
+  }
+
+  episodeSummaries.value.forEach(episode => {
+    const lines = String(episode.script || '').split(/\r?\n/)
+    lines.forEach(line => {
+      const trimmed = line.trim()
+
+      const castMatch = trimmed.match(/^Elenco:\s*(.+)/i)
+      if (castMatch) {
+        castMatch[1].split(/[,;]/).forEach(name => {
+          const clean = name.replace(/\(.*?\)/g, '').replace(/[-–—].*$/g, '').trim()
+          if (!isPlausibleCharacterName(clean)) return
+          const key = clean.toLocaleLowerCase()
+          if (seen.has(key)) return
+          seen.add(key)
+          roles.push({ name: clean, type: 'Role', description: '', main: false, episodes: String(episode.id) })
+        })
+        return
+      }
+
+      const dialogueMatch = trimmed.match(/^([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)*)\s*\(/)
+      if (dialogueMatch) {
+        const name = dialogueMatch[1].trim()
+        if (!isPlausibleCharacterName(name)) return
+        const key = name.toLocaleLowerCase()
+        if (seen.has(key)) return
+        seen.add(key)
+        roles.push({ name, type: 'Role', description: '', main: false, episodes: String(episode.id) })
+      }
+    })
+  })
+
+  const nameCount = {}
+  roles.forEach(role => {
+    const key = role.name.toLocaleLowerCase()
+    nameCount[key] = (nameCount[key] || 0) + 1
+  })
+  roles.forEach(role => {
+    const key = role.name.toLocaleLowerCase()
+    if (nameCount[key] > 1) {
+      role.episodes = episodeSummaries.value
+        .filter(ep => String(ep.script || '').toLowerCase().includes(key))
+        .map(ep => String(ep.id))
+        .join(',')
+    }
+  })
+
+  const deduped = []
+  const dedupedKeys = new Set()
+  roles.forEach(role => {
+    const key = role.name.toLocaleLowerCase()
+    if (dedupedKeys.has(key)) return
+    dedupedKeys.add(key)
+    deduped.push(role)
+  })
+
+  if (deduped.length && !deduped.some(r => r.main)) deduped[0].main = true
+  return deduped.slice(0, 15)
+}
+
+function inferObjectsFromEpisodes() {
+  const seen = new Set()
+  const objects = []
+  const propPatterns = [
+    /\b(tablet|celular|telefone|arma|faca|carta|envelope|chave|livro|revista|garrafa|copo|caixa|pasta|bolsa|carteira|relogio|anel|colar|brinco|mala|caderno|lápis|lapis|caneta|toalha|xicara|prato|garfo|colher|escada|cadeira|mesa|sofá|sofa|cama|espelho|quadro|lâmpada|lampada|televisão|televisao|computador|notebook|câmera|camera|microfone)\b/i,
+    /\b(comprimido|remédio|remedio|seringa|bandagem|injeção|injecao|receita|exame|laudo|prontuário|prontuario)\b/i,
+    /\b(papel|documento|contrato|testamento|certidão|certidao|passaporte|CNH|identidade)\b/i,
+  ]
+  episodeSummaries.value.forEach(episode => {
+    const lines = String(episode.script || '').split(/\r?\n/)
+    lines.forEach(line => {
+      if (!/^△/.test(line.trim())) return
+      const text = line.trim().replace(/^△\s*/, '')
+      propPatterns.forEach(pattern => {
+        const matches = text.matchAll(new RegExp(pattern.source, 'gi'))
+        for (const match of matches) {
+          const raw = match[0].trim()
+          if (!raw || raw.length < 3) continue
+          const objName = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase()
+          const key = raw.toLocaleLowerCase()
+          if (seen.has(key)) continue
+          seen.add(key)
+          objects.push({ name: objName, description: '', episodes: String(episode.id) })
+        }
+      })
+    })
+  })
+  return objects.slice(0, 12)
+}
+
 function repairProductionAssets(assets = productionAssets.value) {
   const repaired = normalizeProductionAssets(assets)
+  if (!repaired.roles.length) {
+    repaired.roles = inferRolesFromEpisodes()
+  }
   if (!repaired.scenes.length) {
     repaired.scenes = inferSceneAssetsFromEpisodes()
+  }
+  if (!repaired.objects.length) {
+    repaired.objects = inferObjectsFromEpisodes()
   }
   return linkProductionAssetsToEpisodes(repaired)
 }
@@ -7251,17 +7531,22 @@ function hydrateExistingProject(project) {
       ? savedAgent.canvas_node_positions
       : {}
     const savedCanvasConnections = Array.isArray(savedAgent.canvas_connections) ? savedAgent.canvas_connections : []
+    const savedCinematicProduction = savedAgent.cinematic_production && typeof savedAgent.cinematic_production === 'object'
+      ? savedAgent.cinematic_production
+      : {}
 
     Object.assign(cinematicConfig, {
       ...cinematicConfig,
       ...(savedAgent.cinematic_config || {}),
     })
-    cinematicPlan.value = savedAgent.cinematic_plan || null
-    cinematicDesignSheet.value = savedAgent.cinematic_design_sheet || null
-    cinematicStoryboardPackage.value = savedAgent.cinematic_storyboard_package || null
-    cinematicImprovements.value = savedAgent.cinematic_improvements || null
-    selectedCinematicParts.value = Number(savedAgent.cinematic_selection?.parts_per_episode || cinematicPlan.value?.recommendations?.selected?.part_count || selectedCinematicParts.value)
-    selectedCinematicPanels.value = Number(savedAgent.cinematic_selection?.panels_per_part || cinematicPlan.value?.recommendations?.selected?.panels_per_part || selectedCinematicPanels.value)
+    cinematicPlan.value = savedCinematicProduction.plan || savedAgent.cinematic_plan || null
+    cinematicDesignSheet.value = savedCinematicProduction.design_sheet || savedAgent.cinematic_design_sheet || null
+    cinematicStoryboardPackage.value = savedCinematicProduction.storyboard_package || savedAgent.cinematic_storyboard_package || null
+    cinematicImprovements.value = savedCinematicProduction.improvements || savedAgent.cinematic_improvements || null
+    cinematicQualityPreview.value = savedCinematicProduction.quality_preview || null
+    cinematicProductionState.value = savedCinematicProduction && Object.keys(savedCinematicProduction).length ? savedCinematicProduction : null
+    selectedCinematicParts.value = Number(savedCinematicProduction.selection?.parts_per_episode || savedAgent.cinematic_selection?.parts_per_episode || cinematicPlan.value?.recommendations?.selected?.part_count || selectedCinematicParts.value)
+    selectedCinematicPanels.value = Number(savedCinematicProduction.selection?.panels_per_part || savedAgent.cinematic_selection?.panels_per_part || cinematicPlan.value?.recommendations?.selected?.panels_per_part || selectedCinematicPanels.value)
     scriptDraft.value = { ...scriptDraft.value, ...savedAgent.script_draft }
     episodeCount.value = Number(scriptDraft.value.episodes) || totalEpisodes
     selectedStyle.value = project.style || 'auto'
@@ -7368,6 +7653,7 @@ function hydrateExistingProject(project) {
   productionAssetsReady.value = false
   productionCanvasOpen.value = false
   episodeStageOpen.value = false
+  cinematicProductionState.value = null
   productionAssets.value = repairProductionAssets({ roles: [], scenes: [], objects: [], media: [] })
   canvasNodePositions.value = {}
   canvasConnections.value = []
@@ -11387,6 +11673,147 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.cinematic-quality-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #eeeeef;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.cinematic-quality-panel.ready {
+  background: #fbfbfc;
+}
+
+.cinematic-quality-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.cinematic-quality-copy span {
+  color: #7b5cff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cinematic-quality-copy strong {
+  color: #111;
+  font-size: 15px;
+}
+
+.cinematic-quality-copy p,
+.cinematic-quality-copy em {
+  max-width: 620px;
+  color: #7d848c;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.cinematic-quality-copy em {
+  color: #c24747;
+}
+
+.cinematic-quality-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.cinematic-quality-actions button {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: #111;
+  color: #fff;
+  cursor: pointer;
+  font: 700 12px/1 var(--font-body);
+  white-space: nowrap;
+}
+
+.cinematic-quality-actions button + button {
+  background: #f0f1f3;
+  color: #111;
+}
+
+.cinematic-quality-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.cinematic-quality-metrics {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.cinematic-quality-metrics span {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #f2f3f5;
+  color: #6f7680;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cinematic-quality-metrics strong {
+  color: #111;
+}
+
+.cinematic-quality-details {
+  grid-column: 1 / -1;
+  padding-top: 2px;
+}
+
+.cinematic-quality-details summary {
+  cursor: pointer;
+  color: #222;
+  font-size: 12px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.cinematic-quality-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.cinematic-quality-details p {
+  max-height: 112px;
+  overflow: auto;
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #f5f6f8;
+  color: #4c5560;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.cinematic-quality-details ul {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding-left: 16px;
+  color: #8a5d1d;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .cinematic-reference-preview {
   display: grid;
   grid-template-columns: 124px 124px minmax(0, 1fr);
@@ -11686,8 +12113,13 @@ onBeforeUnmount(() => {
   .cinematic-advanced-grid,
   .cinematic-recommendation-grid,
   .cinematic-review-detail-grid,
+  .cinematic-quality-panel,
   .cinematic-reference-preview {
     grid-template-columns: 1fr;
+  }
+
+  .cinematic-quality-actions {
+    flex-wrap: wrap;
   }
 
   .cinematic-review-modal {

@@ -1,7 +1,7 @@
 ﻿import { Hono } from 'hono'
 import { generateTextCompletion } from '../services/text-provider.js'
 import { badRequest, success } from '../utils/response.js'
-import { parseJsonBody, z } from '../utils/validation.js'
+import { idParamSchema, parseJsonBody, parseParams, z } from '../utils/validation.js'
 import { requireAdminForWriteMethods } from '../middleware/admin-auth.js'
 import {
   buildCinematicPlanFallback,
@@ -9,11 +9,20 @@ import {
   buildImprovementSuggestions,
   buildModelAdapters,
   buildNegativePrompt,
+  buildPromptVariants,
   buildStoryboardPackage,
   cinematicSkillStatus,
+  refinePanelPrompt,
+  scoreCinematicPanel,
   loadAiVideoPromptWriterSkill,
   validateCinematicPrompt,
 } from '../services/cinematic-production-engine.js'
+import {
+  getCinematicProductionState,
+  materializeCinematicStoryboards,
+  reviewCinematicProductionStage,
+  saveCinematicProductionState,
+} from '../services/cinematic-production-state.js'
 
 const app = new Hono()
 app.use('*', requireAdminForWriteMethods())
@@ -114,6 +123,29 @@ const promptValidateRequestSchema = z.object({
   target_model: z.string().trim().optional(),
 })
 
+const panelQualityRequestSchema = z.object({
+  image_prompt: z.string().trim().optional(),
+  video_prompt: z.string().trim().optional(),
+  negative_prompt: z.string().trim().optional(),
+  prompt_layers: z.record(z.string(), z.any()).optional(),
+  caption: z.string().trim().optional(),
+  references: z.array(z.any()).optional(),
+  duration_seconds: z.coerce.number().positive().optional(),
+})
+
+const promptVariantsRequestSchema = z.object({
+  prompt: z.string().trim().min(1).max(50_000),
+  negative_prompt: z.string().trim().optional(),
+  modes: z.array(z.string().trim()).optional(),
+})
+
+const refinePanelPromptRequestSchema = z.object({
+  panel: z.object({}).catchall(z.any()),
+  instruction: z.string().trim().optional(),
+  variant_mode: z.string().trim().optional(),
+  target_model: z.string().trim().optional(),
+})
+
 const improveProjectRequestSchema = z.object({
   plan: z.any().optional(),
   brief: cinematicBriefSchema.optional(),
@@ -129,6 +161,31 @@ const exportPackageRequestSchema = z.object({
   brief: cinematicBriefSchema,
   plan: z.any().optional(),
   storyboard_package: z.any().optional(),
+})
+
+const productionStateSaveSchema = z.object({
+  brief: z.any().optional(),
+  plan: z.any().optional(),
+  design_sheet: z.any().optional(),
+  storyboard_package: z.any().optional(),
+  improvements: z.any().optional(),
+  quality_preview: z.any().optional(),
+  selection: z.any().optional(),
+  generation_queue: z.array(z.any()).optional(),
+  model: z.string().trim().optional(),
+})
+
+const productionStageReviewSchema = z.object({
+  stage_key: z.enum(['briefing', 'season_arc', 'visual_bible', 'design_sheet', 'script', 'parts', 'storyboard', 'final_prompts', 'export']),
+  status: z.enum(['reviewed', 'needs_review']).optional().default('reviewed'),
+  notes: z.string().trim().optional().default(''),
+})
+
+const materializeStoryboardsSchema = z.object({
+  episode_id: z.coerce.number().int().positive().optional(),
+  episode_number: z.coerce.number().int().positive().optional(),
+  storyboard_package: z.any().optional(),
+  part_numbers: z.array(z.coerce.number().int().positive()).optional(),
 })
 
 const optimizeVisualPromptResultSchema = z.object({
@@ -316,6 +373,52 @@ app.get('/cinematic-engine', async (c) => success(c, {
   model_adapters: buildModelAdapters('Photorealistic cinematic frame, consistent character, clear framing, no unwanted text.', buildNegativePrompt()),
 }))
 
+app.get('/production-state/:id', async (c) => {
+  const parsed = parseParams(c, idParamSchema)
+  if (!parsed.ok) return parsed.response
+  try {
+    return success(c, getCinematicProductionState(parsed.data.id))
+  } catch (error) {
+    return badRequest(c, error instanceof Error ? error.message : 'Falha ao carregar estado cinematografico')
+  }
+})
+
+app.put('/production-state/:id', async (c) => {
+  const params = parseParams(c, idParamSchema)
+  if (!params.ok) return params.response
+  const parsed = await parseJsonBody(c, productionStateSaveSchema)
+  if (!parsed.ok) return parsed.response
+  try {
+    return success(c, saveCinematicProductionState(params.data.id, parsed.data))
+  } catch (error) {
+    return badRequest(c, error instanceof Error ? error.message : 'Falha ao salvar estado cinematografico')
+  }
+})
+
+app.post('/production-state/:id/review', async (c) => {
+  const params = parseParams(c, idParamSchema)
+  if (!params.ok) return params.response
+  const parsed = await parseJsonBody(c, productionStageReviewSchema)
+  if (!parsed.ok) return parsed.response
+  try {
+    return success(c, reviewCinematicProductionStage(params.data.id, parsed.data))
+  } catch (error) {
+    return badRequest(c, error instanceof Error ? error.message : 'Falha ao revisar etapa cinematografica')
+  }
+})
+
+app.post('/production-state/:id/materialize-storyboards', async (c) => {
+  const params = parseParams(c, idParamSchema)
+  if (!params.ok) return params.response
+  const parsed = await parseJsonBody(c, materializeStoryboardsSchema)
+  if (!parsed.ok) return parsed.response
+  try {
+    return success(c, materializeCinematicStoryboards(params.data.id, parsed.data))
+  } catch (error) {
+    return badRequest(c, error instanceof Error ? error.message : 'Falha ao materializar storyboards')
+  }
+})
+
 app.post('/cinematic-plan', async (c) => {
   const parsed = await parseJsonBody(c, cinematicPlanRequestSchema)
   if (!parsed.ok) return parsed.response
@@ -412,6 +515,24 @@ app.post('/prompt-validate', async (c) => {
     model_adapters: buildModelAdapters(input.prompt, negativePrompt),
     target_model: input.target_model || 'generic',
   })
+})
+
+app.post('/panel-quality', async (c) => {
+  const parsed = await parseJsonBody(c, panelQualityRequestSchema)
+  if (!parsed.ok) return parsed.response
+  return success(c, scoreCinematicPanel(parsed.data))
+})
+
+app.post('/prompt-variants', async (c) => {
+  const parsed = await parseJsonBody(c, promptVariantsRequestSchema)
+  if (!parsed.ok) return parsed.response
+  return success(c, buildPromptVariants(parsed.data))
+})
+
+app.post('/refine-panel-prompt', async (c) => {
+  const parsed = await parseJsonBody(c, refinePanelPromptRequestSchema)
+  if (!parsed.ok) return parsed.response
+  return success(c, refinePanelPrompt(parsed.data))
 })
 
 app.post('/improve-project', async (c) => {

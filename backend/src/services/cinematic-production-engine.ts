@@ -241,12 +241,67 @@ export function validateCinematicPrompt(prompt: string) {
   if (!/(camera|lens|shot|framing|composition|close-up|wide|medium|câmera|plano|enquadramento)/i.test(text)) {
     issues.push({ severity: 'warning', message: 'Inclua enquadramento/camera para reduzir interpretacao do modelo.' })
   }
-  if (/(book|photo|letter|screen|livro|foto|carta|tela)/i.test(text) && !/(oriented|orientation|not upside|not mirrored|orientado|espelhado|cabeca para baixo)/i.test(text)) {
+  if (/\b(book|photo|letter|screen)\b|\b(livro|foto|carta|tela)\b/i.test(text) && !/(oriented|orientation|not upside|not mirrored|orientado|espelhado|cabeca para baixo)/i.test(text)) {
     issues.push({ severity: 'warning', message: 'Conteudo visivel em livro/foto/tela precisa de orientacao correta para o personagem.' })
   }
   return {
     passed: !issues.some(issue => issue.severity === 'error'),
     issues,
+  }
+}
+
+export function scoreCinematicPanel(input: {
+  image_prompt?: string
+  video_prompt?: string
+  negative_prompt?: string
+  prompt_layers?: Record<string, unknown>
+  caption?: string
+  references?: unknown[]
+  duration_seconds?: number
+}) {
+  const imagePrompt = cleanText(input.image_prompt)
+  const videoPrompt = cleanText(input.video_prompt)
+  const negativePrompt = cleanText(input.negative_prompt)
+  const layers = input.prompt_layers || {}
+  const validation = validateCinematicPrompt(imagePrompt)
+  const layerKeys = ['character', 'location', 'action', 'camera', 'lighting', 'style', 'restrictions', 'references']
+  const presentLayers = layerKeys.filter(key => cleanText((layers as any)[key])).length
+  const hasCamera = /(camera|lens|shot|framing|composition|close-up|wide|medium|câmera|plano|enquadramento)/i.test(imagePrompt)
+  const hasContinuity = /(consistent|continuity|wardrobe|same face|character lock|visual bible|consistente|continuidade|figurino)/i.test(imagePrompt)
+  const hasDrama = /(conflict|reveal|choice|emotion|fear|love|danger|decision|dramatic|conflito|revelacao|decisao|emocao)/i.test(`${imagePrompt} ${input.caption || ''}`)
+  const hasVideoAction = /(moves|walks|turns|looks|reveals|runs|approaches|camera|motion|duration|anda|olha|revela|corre|aproxima)/i.test(videoPrompt)
+  const hasReferences = Boolean(input.references?.length) || /reference|design sheet|frame reference|visual bible|referencia/i.test(imagePrompt)
+  const readingRisk = /\b(book|photo|letter|screen)\b|\b(livro|foto|carta|tela)\b/i.test(imagePrompt)
+  const readingProtected = /(not upside|not mirrored|oriented|faces the character|nao invertido|nao espelhado|orientado)/i.test(`${imagePrompt} ${negativePrompt}`)
+
+  const visualClarity = clamp(58 + (hasCamera ? 16 : 0) + Math.min(18, Math.floor(imagePrompt.length / 80)) - validation.issues.length * 6, 0, 100)
+  const consistency = clamp(50 + (hasContinuity ? 20 : 0) + Math.min(20, presentLayers * 3) + (hasReferences ? 8 : 0), 0, 100)
+  const dramaticStrength = clamp(54 + (hasDrama ? 22 : 0) + Math.min(16, cleanText(input.caption).length / 4), 0, 100)
+  const videoUsefulness = clamp(48 + (videoPrompt ? 18 : 0) + (hasVideoAction ? 20 : 0) + (Number(input.duration_seconds || 0) > 0 ? 6 : 0), 0, 100)
+  const generationRisk = clamp(
+    46
+      - Math.floor((visualClarity + consistency) / 8)
+      + validation.issues.length * 8
+      + (readingRisk && !readingProtected ? 18 : 0)
+      + (!negativePrompt ? 12 : 0),
+    0,
+    100,
+  )
+  const score = clamp((visualClarity + consistency + dramaticStrength + videoUsefulness + (100 - generationRisk)) / 5, 0, 100)
+
+  return {
+    score,
+    visual_clarity: visualClarity,
+    consistency,
+    dramatic_strength: dramaticStrength,
+    video_usefulness: videoUsefulness,
+    generation_risk: generationRisk,
+    validation,
+    issues: [
+      ...validation.issues,
+      ...(!hasReferences ? [{ severity: 'warning' as const, message: 'Nenhuma referência visual explícita foi encontrada no prompt.' }] : []),
+      ...(readingRisk && !readingProtected ? [{ severity: 'warning' as const, message: 'Conteúdo em livro/foto/tela precisa declarar orientação correta.' }] : []),
+    ],
   }
 }
 
@@ -261,6 +316,99 @@ export function buildModelAdapters(prompt: string, negativePrompt: string) {
     { model: 'Wan', supports_negative_prompt: true, prompt: base.slice(0, 1400), negative_prompt: negativePrompt, note: 'Bom para prompts estruturados com referencia.' },
     { model: 'Flux', supports_negative_prompt: true, prompt: base.slice(0, 900), negative_prompt: negativePrompt, note: 'Use prompt de imagem concentrado em sujeito, luz e composicao.' },
   ]
+}
+
+export function buildPromptVariants(input: {
+  prompt: string
+  negative_prompt?: string
+  modes?: string[]
+}) {
+  const basePrompt = cleanText(input.prompt)
+  const negativePrompt = cleanText(input.negative_prompt, buildNegativePrompt())
+  const modeMap: Record<string, { label: string; modifier: string }> = {
+    emotional: { label: 'Mais emocional', modifier: 'heightened emotional tension, subtle facial performance, intimate dramatic blocking' },
+    action: { label: 'Mais ação', modifier: 'strong physical action, dynamic blocking, sharper movement, higher urgency' },
+    cinematic: { label: 'Mais cinematográfico', modifier: 'premium cinematic composition, stronger motivated lighting, filmic depth, controlled contrast' },
+    slow: { label: 'Mais lento', modifier: 'slower pacing, held look, quiet pause, readable body language, contemplative camera' },
+    intense: { label: 'Mais intenso', modifier: 'more intense stakes, tighter framing, dramatic contrast, clear visual pressure' },
+  }
+  const modes = (input.modes?.length ? input.modes : Object.keys(modeMap)).filter(mode => modeMap[mode])
+
+  return {
+    variants: modes.map(mode => {
+      const prompt = `${basePrompt}, ${modeMap[mode].modifier}`
+      return {
+        mode,
+        label: modeMap[mode].label,
+        prompt,
+        negative_prompt: negativePrompt,
+        validation: validateCinematicPrompt(prompt),
+        quality: scoreCinematicPanel({ image_prompt: prompt, negative_prompt: negativePrompt }),
+        model_adapters: buildModelAdapters(prompt, negativePrompt),
+      }
+    }),
+  }
+}
+
+export function refinePanelPrompt(input: {
+  panel: any
+  instruction?: string
+  variant_mode?: string
+  target_model?: string
+}) {
+  const panel = input.panel || {}
+  const negativePrompt = cleanText(panel.negative_prompt, buildNegativePrompt())
+  const instruction = cleanText(input.instruction)
+  const variant = input.variant_mode
+    ? buildPromptVariants({ prompt: panel.image_prompt || panel.prompt || '', negative_prompt: negativePrompt, modes: [input.variant_mode] }).variants[0]
+    : null
+  const imagePrompt = [
+    cleanText(variant?.prompt || panel.image_prompt || panel.prompt),
+    instruction ? `Refinement instruction: ${instruction}.` : '',
+    'Keep exact character identity, wardrobe continuity, approved locations, camera clarity, lighting motivation and visual bible references.',
+    'No unwanted text, subtitles, watermark or random UI labels.',
+  ].filter(Boolean).join(' ')
+  const videoPrompt = [
+    cleanText(panel.video_prompt),
+    instruction ? `Motion refinement: ${instruction}.` : '',
+    'Keep movement natural and readable for the target duration.',
+  ].filter(Boolean).join(' ')
+  const adapters = buildModelAdapters(imagePrompt, negativePrompt)
+  const targetAdapter = input.target_model
+    ? adapters.find(adapter => adapter.model.toLowerCase() === input.target_model?.toLowerCase())
+    : null
+
+  return {
+    panel_number: panel.panel_number,
+    image_prompt: imagePrompt,
+    video_prompt: videoPrompt,
+    negative_prompt: negativePrompt,
+    prompt_layers: {
+      ...(panel.prompt_layers || {}),
+      restrictions: negativePrompt,
+      refinement: instruction || variant?.label || 'manual refinement',
+    },
+    quality: scoreCinematicPanel({
+      image_prompt: imagePrompt,
+      video_prompt: videoPrompt,
+      negative_prompt: negativePrompt,
+      prompt_layers: panel.prompt_layers,
+      caption: panel.caption,
+      duration_seconds: panel.timecode?.end_seconds && panel.timecode?.start_seconds
+        ? Number(panel.timecode.end_seconds) - Number(panel.timecode.start_seconds)
+        : undefined,
+    }),
+    model_adapters: targetAdapter ? [targetAdapter] : adapters,
+    versions: {
+      ...(panel.versions || {}),
+      refined: {
+        at: new Date().toISOString(),
+        instruction: instruction || variant?.label || 'refined',
+        image_prompt: imagePrompt,
+        video_prompt: videoPrompt,
+      },
+    },
+  }
 }
 
 export function buildCinematicPlanFallback(brief: CinematicBrief) {
@@ -444,6 +592,24 @@ export function buildStoryboardPackage(brief: CinematicBrief, plan?: any, overri
       const caption = `${String(panelNumber).padStart(2, '0')}. ${action}`
       const imagePrompt = `Photorealistic cinematic still for "${project.title}", part ${partNumber}, panel ${panelNumber}: ${action} from ${firstSentence(brief.idea)}, consistent characters and wardrobe, ${project.director_mode}, ${project.ratio}, expressive lighting, clear framing, no unwanted text. If any book, photo, letter or screen is visible, its content faces the character correctly and is not upside down, mirrored or reversed.`
       const videoPrompt = `The character is seen in a clear dramatic moment inside the established world, with consistent wardrobe and lighting. The action is visible in the frame and lasts naturally for ${Math.max(3, endSeconds - startSeconds)} seconds.`
+      const promptLayers = {
+        character: 'Use visual bible character locks.',
+        location: 'Use approved location geography and palette.',
+        action,
+        camera: panelNumber % 3 === 0 ? 'close-up or insert' : panelNumber % 2 === 0 ? 'medium shot' : 'wide establishing composition',
+        lighting: 'cinematic motivated lighting',
+        style: project.director_mode,
+        restrictions: negativePrompt,
+        references: 'Use approved design sheet and frame references.',
+      }
+      const quality = scoreCinematicPanel({
+        image_prompt: imagePrompt,
+        video_prompt: videoPrompt,
+        negative_prompt: negativePrompt,
+        prompt_layers: promptLayers,
+        caption,
+        duration_seconds: Math.max(3, endSeconds - startSeconds),
+      })
       return {
         panel_number: panelNumber,
         global_panel_number: globalPanel,
@@ -455,26 +621,11 @@ export function buildStoryboardPackage(brief: CinematicBrief, plan?: any, overri
           label: `${String(Math.floor(startSeconds / 60)).padStart(2, '0')}:${String(startSeconds % 60).padStart(2, '0')} - ${String(Math.floor(endSeconds / 60)).padStart(2, '0')}:${String(endSeconds % 60).padStart(2, '0')}`,
         },
         rhythm: panelDuration <= 5 ? 'fast' : panelDuration >= 10 ? 'slow' : 'medium',
-        prompt_layers: {
-          character: 'Use visual bible character locks.',
-          location: 'Use approved location geography and palette.',
-          action,
-          camera: panelNumber % 3 === 0 ? 'close-up or insert' : panelNumber % 2 === 0 ? 'medium shot' : 'wide establishing composition',
-          lighting: 'cinematic motivated lighting',
-          style: project.director_mode,
-          restrictions: negativePrompt,
-          references: 'Use approved design sheet and frame references.',
-        },
+        prompt_layers: promptLayers,
         image_prompt: imagePrompt,
         video_prompt: videoPrompt,
         negative_prompt: negativePrompt,
-        quality: {
-          visual_clarity: 82,
-          consistency: 84,
-          dramatic_strength: 80,
-          video_usefulness: 78,
-          generation_risk: 22,
-        },
+        quality,
         validation: validateCinematicPrompt(imagePrompt),
         model_adapters: buildModelAdapters(imagePrompt, negativePrompt),
         versions: {

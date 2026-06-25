@@ -147,10 +147,17 @@ export const dramaAPI = {
 
 export const storyStudioAPI = {
   getCinematicEngine: () => api.get('/story-studio/cinematic-engine'),
+  getProductionState: (dramaId: number) => api.get(`/story-studio/production-state/${dramaId}`),
+  saveProductionState: (dramaId: number, data: any) => api.put(`/story-studio/production-state/${dramaId}`, data),
+  reviewProductionStage: (dramaId: number, data: any) => api.post(`/story-studio/production-state/${dramaId}/review`, data),
+  materializeStoryboards: (dramaId: number, data: any) => api.post(`/story-studio/production-state/${dramaId}/materialize-storyboards`, data),
   generateCinematicPlan: (data: any) => api.post('/story-studio/cinematic-plan', data),
   generateDesignSheet: (data: any) => api.post('/story-studio/design-sheet', data),
   generateStoryboardPackage: (data: any) => api.post('/story-studio/storyboard-package', data),
   validatePrompt: (data: any) => api.post('/story-studio/prompt-validate', data),
+  scorePanelQuality: (data: any) => api.post('/story-studio/panel-quality', data),
+  generatePromptVariants: (data: any) => api.post('/story-studio/prompt-variants', data),
+  refinePanelPrompt: (data: any) => api.post('/story-studio/refine-panel-prompt', data),
   improveProject: (data: any) => api.post('/story-studio/improve-project', data),
   cinemaChat: (data: any) => api.post('/story-studio/cinema-chat', data),
   exportPackage: (data: any) => api.post('/story-studio/export-package', data),

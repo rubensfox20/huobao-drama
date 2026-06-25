@@ -1,1 +1,0 @@
-import{g as r,L as o,c as s,D as c,o as n}from"./BuCMH24V.js";const m={__name:"index",async setup(_){let e,t;const a=r();return[e,t]=o(()=>c({path:"/",query:{project:String(a.params.id)}},{replace:!0})),await e,t(),(p,i)=>(n(),s("div"))}};export{m as default};

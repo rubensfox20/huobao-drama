@@ -89,10 +89,24 @@ app.post('/', async (c) => {
   const res = db.insert(schema.storyboards).values({
     episodeId: body.episode_id,
     storyboardNumber: body.storyboard_number || 1,
+    partNumber: body.part_number ?? null,
+    panelNumber: body.panel_number ?? null,
+    timeStartMs: body.time_start_ms ?? null,
+    timeEndMs: body.time_end_ms ?? null,
+    panelCaption: body.panel_caption ?? null,
+    sceneSpeed: body.scene_speed ?? null,
     title: body.title,
     description: body.description,
     action: body.action,
     dialogue: body.dialogue,
+    imagePrompt: 'image_prompt' in body ? sanitizeVisualPrompt(body.image_prompt) : undefined,
+    videoPrompt: 'video_prompt' in body ? sanitizeVisualPrompt(body.video_prompt) : undefined,
+    negativePrompt: body.negative_prompt,
+    promptLayers: typeof body.prompt_layers === 'string' ? body.prompt_layers : body.prompt_layers ? JSON.stringify(body.prompt_layers) : undefined,
+    modelAdapters: typeof body.model_adapters === 'string' ? body.model_adapters : body.model_adapters ? JSON.stringify(body.model_adapters) : undefined,
+    qualityScore: body.quality_score ?? null,
+    version: body.version ?? 1,
+    reproducibility: typeof body.reproducibility === 'string' ? body.reproducibility : body.reproducibility ? JSON.stringify(body.reproducibility) : undefined,
     sceneId: body.scene_id,
     duration: body.duration || 10,
     motionPresetOverride: body.motion_preset_override || null,
@@ -128,9 +142,15 @@ app.put('/:id', async (c) => {
 
   const fieldMap: Record<string, string> = {
     title: 'title', description: 'description', shot_type: 'shotType',
+    part_number: 'partNumber', panel_number: 'panelNumber',
+    time_start_ms: 'timeStartMs', time_end_ms: 'timeEndMs',
+    panel_caption: 'panelCaption', scene_speed: 'sceneSpeed',
     angle: 'angle', movement: 'movement', action: 'action',
     dialogue: 'dialogue', duration: 'duration', video_prompt: 'videoPrompt',
-    image_prompt: 'imagePrompt', scene_id: 'sceneId', location: 'location',
+    image_prompt: 'imagePrompt', negative_prompt: 'negativePrompt',
+    prompt_layers: 'promptLayers', model_adapters: 'modelAdapters',
+    quality_score: 'qualityScore', version: 'version', reproducibility: 'reproducibility',
+    scene_id: 'sceneId', location: 'location',
     time: 'time', atmosphere: 'atmosphere', result: 'result',
     review_status: 'reviewStatus', review_notes: 'reviewNotes',
     continuity_mode: 'continuityMode', continuity_source_storyboard_id: 'continuitySourceStoryboardId',
@@ -149,6 +169,10 @@ app.put('/:id', async (c) => {
 
   if ('image_prompt' in body) updates.imagePrompt = sanitizeVisualPrompt(body.image_prompt)
   if ('video_prompt' in body) updates.videoPrompt = sanitizeVisualPrompt(body.video_prompt)
+  if ('negative_prompt' in body) updates.negativePrompt = sanitizeSupportPrompt(body.negative_prompt)
+  if ('prompt_layers' in body) updates.promptLayers = typeof body.prompt_layers === 'string' ? body.prompt_layers : JSON.stringify(body.prompt_layers || {})
+  if ('model_adapters' in body) updates.modelAdapters = typeof body.model_adapters === 'string' ? body.model_adapters : JSON.stringify(body.model_adapters || [])
+  if ('reproducibility' in body) updates.reproducibility = typeof body.reproducibility === 'string' ? body.reproducibility : JSON.stringify(body.reproducibility || {})
   if ('bgm_prompt' in body) updates.bgmPrompt = sanitizeSupportPrompt(body.bgm_prompt)
   if ('sound_effect' in body) updates.soundEffect = sanitizeSupportPrompt(body.sound_effect)
   if ('review_status' in body) updates.reviewStatus = normalizeStoryboardReviewStatus(body.review_status)

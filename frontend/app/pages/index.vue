@@ -1003,7 +1003,7 @@
               <details v-if="episodeOutlinesReady" class="script-section episode-script-section" open>
                 <summary><ChevronRight class="summary-chevron" :size="16" /> Roteiro do episódio <button class="expand-script-chip" type="button" @click.prevent.stop="toggleAllEpisodeScripts">{{ allEpisodeScriptsExpanded ? 'Recolher roteiro' : 'Expandir roteiro' }}</button></summary>
                 <div class="episode-outline-list" :class="{ 'selection-mode': batchSelectionActive }">
-                  <details v-for="episode in episodeSummaries" :key="episode.id" :open="episode.expanded" :class="{ selected: !episode.scriptReady && selectedEpisodeIds.includes(episode.id), ready: episode.scriptReady, disabled: batchSelectionActive && episode.scriptReady }" @toggle="syncEpisodeExpanded($event, episode.id)">
+                  <details v-for="episode in episodeSummaries" :key="episode.id" :open="episode.expanded" :class="{ selected: !episode.scriptReady && selectedEpisodeIds.includes(episode.id), ready: episode.scriptReady, failed: episode.generationError, disabled: batchSelectionActive && episode.scriptReady }" @toggle="syncEpisodeExpanded($event, episode.id)">
                     <summary @click="handleEpisodeSummaryClick($event, episode.id)">
                       <span v-if="batchSelectionActive && !episode.scriptReady" class="episode-select-box"><Check v-if="selectedEpisodeIds.includes(episode.id)" :size="11" /></span><span v-else-if="batchSelectionActive" class="episode-select-box disabled"><Check :size="11" /></span>
                       <ChevronRight v-else class="episode-row-chevron" :size="13" />
@@ -1014,6 +1014,7 @@
                     </summary>
                     <textarea v-if="episode.scriptReady" v-model="episode.script" class="episode-script-text episode-script-editor" spellcheck="true" @input="queueEpisodeAutosave"></textarea>
                     <p v-else>{{ episode.summary }}</p>
+                    <div v-if="episode.generationError && !isEpisodeGenerating(episode.id)" class="episode-inline-error"><span>{{ episode.generationError }}</span></div>
                     <div v-if="isEpisodeGenerating(episode.id)" class="episode-inline-loading"><LoaderCircle :size="14" /><span>Gerando roteiro... <small>(cerca de 1-3 min de espera)</small></span></div>
                     <button v-if="!episode.scriptReady && !isEpisodeGenerating(episode.id)" class="episode-generate-button" type="button" :disabled="episodeScriptsGenerating" @click="generateEpisodeScripts(1, [episode.id])"><WandSparkles :size="13" /> Gerar</button>
                   </details>
@@ -1201,40 +1202,111 @@
                   :aria-expanded="openControl === 'episodes'"
                   @click.stop="toggleControl('episodes')"
                 >
-                  <span>{{ episodeLabel }}</span>
+                  <ListChecks :size="16" />
+                  <span>{{ productionProfileLabel }}</span>
                   <ChevronDown :size="15" />
                 </button>
-                <div v-if="openControl === 'episodes'" class="control-popover episode-popover" role="menu" @click.stop>
-                  <button
-                    v-for="count in episodeOptions"
-                    :key="count"
-                    class="episode-option"
-                    :class="{ selected: episodeCount === count }"
-                    type="button"
-                    role="menuitemradio"
-                    :aria-checked="episodeCount === count"
-                    @click="selectEpisodeCount(count)"
-                  >
-                    <Check v-if="episodeCount === count" :size="16" />
-                    <span v-else></span>
-                    <strong>{{ String(count).padStart(2, '0') }} Episódio</strong>
-                  </button>
-                  <label class="custom-episode-row">
-                    <input
-                      v-model="customEpisodeCount"
-                      inputmode="numeric"
-                      maxlength="3"
-                      placeholder="Personalizado"
-                      @change="applyCustomEpisodeCount"
-                      @keydown.enter.prevent="applyCustomEpisodeCount"
-                    />
-                    <span>Episódio</span>
-                  </label>
+                <div v-if="openControl === 'episodes'" class="control-popover cinematic-setup-popover" role="dialog" aria-label="Configuração da produção" @click.stop>
+                  <header>
+                    <div>
+                      <strong>Configuração da produção</strong>
+                      <span>A skill recomenda partes e painéis depois de analisar a ideia.</span>
+                    </div>
+                    <span class="cinematic-engine-badge" :class="{ ready: cinematicEngineReady }">
+                      {{ cinematicEngineReady ? 'Skill ativa' : 'Skill local' }}
+                    </span>
+                  </header>
+
+                  <div class="cinematic-setup-grid">
+                    <label>
+                      <span>Temporadas</span>
+                      <input v-model.number="cinematicConfig.seasons" type="number" min="1" max="20" @change="syncCinematicEpisodeTotal" />
+                    </label>
+                    <label>
+                      <span>Episódios por temporada</span>
+                      <input v-model.number="cinematicConfig.episodesPerSeason" type="number" min="1" max="999" @change="syncCinematicEpisodeTotal" />
+                    </label>
+                    <label>
+                      <span>Duração por episódio</span>
+                      <select v-model.number="cinematicConfig.durationSeconds">
+                        <option :value="60">1 minuto</option>
+                        <option :value="120">2 minutos</option>
+                        <option :value="180">3 minutos</option>
+                        <option :value="300">5 minutos</option>
+                        <option :value="600">10 minutos</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Ritmo das cenas</span>
+                      <select v-model="cinematicConfig.pace">
+                        <option value="auto">IA recomenda</option>
+                        <option value="lento">Lento</option>
+                        <option value="medio">Médio</option>
+                        <option value="rapido">Rápido</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div class="cinematic-total-row">
+                    <span>Total do projeto</span>
+                    <strong>{{ cinematicTotalEpisodes }} episódios</strong>
+                  </div>
+
+                  <details class="cinematic-advanced">
+                    <summary>
+                      <span>Opções avançadas</span>
+                      <ChevronDown :size="14" />
+                    </summary>
+                    <div class="cinematic-advanced-grid">
+                      <label>
+                        <span>Director Mode</span>
+                        <select v-model="cinematicConfig.directorMode">
+                          <option value="auto">IA define</option>
+                          <option value="suspense psicologico">Suspense psicológico</option>
+                          <option value="novela dramatica">Novela dramática</option>
+                          <option value="sci-fi neon">Sci-fi neon</option>
+                          <option value="acao rapida">Ação rápida</option>
+                          <option value="romance emocional">Romance emocional</option>
+                          <option value="terror atmosferico">Terror atmosférico</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>Formato</span>
+                        <select v-model="cinematicConfig.formatPreset">
+                          <option value="serie vertical">Série vertical</option>
+                          <option value="cinematic wide">Cinematic wide</option>
+                          <option value="tiktok reels curto">TikTok / Reels</option>
+                          <option value="youtube episodio">YouTube episódio</option>
+                          <option value="trailer">Trailer</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>Idioma do roteiro</span>
+                        <select v-model="cinematicConfig.scriptLanguage">
+                          <option value="pt-BR">Português BR</option>
+                          <option value="en-US">English</option>
+                          <option value="es">Español</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>Idioma dos prompts</span>
+                        <select v-model="cinematicConfig.promptLanguage">
+                          <option value="English">English</option>
+                          <option value="pt-BR">Português BR</option>
+                        </select>
+                      </label>
+                    </div>
+                    <button class="avatar-zero-demo-link" type="button" @click="loadAvatarZeroDemo">
+                      <Sparkles :size="14" />
+                      Carregar demo Avatar.Zero
+                    </button>
+                  </details>
                 </div>
               </div>
 
-              <button class="generate-button" type="button" :disabled="!aiPrompt.trim() || creatingProject" @click="createFromPrompt">
-                {{ creatingProject ? 'Gerando...' : 'Gerar' }}
+              <button class="generate-button" type="button" :disabled="!aiPrompt.trim() || creatingProject || cinematicPlanning" @click="createFromPrompt">
+                <LoaderCircle v-if="cinematicPlanning" :size="15" class="animate-spin" />
+                {{ cinematicPlanning ? 'Analisando...' : 'Analisar' }}
               </button>
             </div>
           </div>
@@ -1252,14 +1324,13 @@
           </div>
         </div>
 
+        <div class="composer-note">
+          <span><Info :size="16" /> Garanta que você possui o direito autoral</span>
+          <button class="skip-analysis-link" type="button" :disabled="creatingProject" @click="createBlankProject">
+            {{ creatingProject ? 'Criando...' : 'Pule a análise do roteiro e entre na tela' }}
+          </button>
+        </div>
       </section>
-
-      <div class="composer-note">
-        <span><Info :size="16" /> Garanta que você possui o direito autoral · -25 créditos/1000 caracteres</span>
-        <button class="skip-analysis-link" type="button" :disabled="creatingProject" @click="createBlankProject">
-          {{ creatingProject ? 'Criando...' : 'Pule a análise do roteiro e entre na tela' }}
-        </button>
-      </div>
 
       <section class="projects-section">
         <div class="projects-head">
@@ -1430,6 +1501,106 @@
             </button>
           </footer>
         </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showCinematicReview" class="pippit-overlay cinematic-review-overlay" @click.self="closeCinematicReview">
+        <section class="cinematic-review-modal" role="dialog" aria-modal="true" aria-labelledby="cinematic-review-title">
+          <header class="cinematic-review-head">
+            <div>
+              <span>Pré-produção com IA</span>
+              <h2 id="cinematic-review-title">Recomendação para este roteiro</h2>
+              <p>A melhor configuração já está selecionada. Ajuste somente se precisar.</p>
+            </div>
+            <button type="button" aria-label="Fechar" @click="closeCinematicReview"><X :size="20" /></button>
+          </header>
+
+          <div class="cinematic-review-summary">
+            <span>{{ cinematicConfig.seasons }} {{ cinematicConfig.seasons === 1 ? 'temporada' : 'temporadas' }}</span>
+            <span>{{ cinematicTotalEpisodes }} episódios</span>
+            <span>{{ formatCinematicDuration(cinematicConfig.durationSeconds) }} por episódio</span>
+            <span>{{ cinematicPlan?.project?.director_mode || cinematicConfig.directorMode }}</span>
+          </div>
+
+          <div class="cinematic-recommendation-grid">
+            <article>
+              <div class="recommendation-label">
+                <span>Partes por episódio</span>
+                <em>{{ cinematicPartConfidence }}% confiança</em>
+              </div>
+              <strong>{{ selectedCinematicParts }}</strong>
+              <select v-model.number="selectedCinematicParts">
+                <option v-for="option in cinematicPartOptions" :key="`part-${option.value}`" :value="option.value">
+                  {{ option.value }} · {{ option.label }}
+                </option>
+              </select>
+              <p>{{ cinematicPartReason }}</p>
+              <small>{{ cinematicPartRisk }}</small>
+            </article>
+
+            <article>
+              <div class="recommendation-label">
+                <span>Painéis por parte</span>
+                <em>{{ cinematicPanelConfidence }}% confiança</em>
+              </div>
+              <strong>{{ selectedCinematicPanels }}</strong>
+              <select v-model.number="selectedCinematicPanels">
+                <option v-for="option in cinematicPanelOptions" :key="`panel-${option.value}`" :value="option.value">
+                  {{ option.value }} · {{ option.label }}
+                </option>
+              </select>
+              <p>{{ cinematicPanelReason }}</p>
+              <small>Layout sugerido: {{ cinematicPlan?.recommendations?.selected?.layout || 'dinâmico' }}</small>
+            </article>
+          </div>
+
+          <div class="cinematic-estimate">
+            <div><strong>{{ cinematicEstimate.total_parts }}</strong><span>partes</span></div>
+            <div><strong>{{ cinematicEstimate.total_panels }}</strong><span>painéis</span></div>
+            <div><strong>{{ cinematicEstimate.image_prompts }}</strong><span>prompts de imagem</span></div>
+            <div><strong>{{ cinematicEstimate.video_prompts }}</strong><span>prompts de vídeo</span></div>
+            <div><strong>{{ cinematicEstimate.review_load }}</strong><span>carga de revisão</span></div>
+          </div>
+
+          <div v-if="cinematicConfig.useAvatarZeroReferences" class="cinematic-reference-preview">
+            <img src="/images/avatar-zero-design-sheet.jpg" alt="Design sheet Avatar.Zero" />
+            <img src="/images/avatar-zero-storyboard.jpg" alt="Storyboard Avatar.Zero" />
+            <div>
+              <strong>Referências Avatar.Zero</strong>
+              <span>Design sheet e storyboard serão usados como direção visual aprovada.</span>
+            </div>
+          </div>
+
+          <details class="cinematic-review-details">
+            <summary>
+              <span>Ver arco, bíblia visual e regras de continuidade</span>
+              <ChevronDown :size="15" />
+            </summary>
+            <div class="cinematic-review-detail-grid">
+              <section>
+                <strong>Arco da temporada</strong>
+                <p>{{ cinematicPlan?.season_arc?.main_arc }}</p>
+              </section>
+              <section>
+                <strong>Bíblia visual</strong>
+                <p>{{ cinematicPlan?.visual_bible?.logline }}</p>
+              </section>
+              <section class="continuity-detail">
+                <strong>Continuidade obrigatória</strong>
+                <p>Fotos, livros, cartas e telas devem ficar orientados para o personagem, nunca invertidos, espelhados ou de cabeça para baixo.</p>
+              </section>
+            </div>
+          </details>
+
+          <footer>
+            <button class="cinematic-review-back" type="button" @click="closeCinematicReview">Voltar e editar</button>
+            <button class="cinematic-review-confirm" type="button" :disabled="creatingProject" @click="confirmCinematicGeneration">
+              <LoaderCircle v-if="creatingProject" :size="15" class="animate-spin" />
+              {{ creatingProject ? 'Gerando...' : 'Aprovar e gerar roteiro' }}
+            </button>
+          </footer>
+        </section>
       </div>
     </Teleport>
 
@@ -1750,6 +1921,26 @@ const styleSearchOpen = ref(false)
 const styleSearchQuery = ref('')
 const pasteText = ref('')
 const aiPrompt = ref('')
+const cinematicEngine = ref(null)
+const cinematicPlan = ref(null)
+const cinematicDesignSheet = ref(null)
+const cinematicStoryboardPackage = ref(null)
+const cinematicImprovements = ref(null)
+const cinematicPlanning = ref(false)
+const showCinematicReview = ref(false)
+const selectedCinematicParts = ref(4)
+const selectedCinematicPanels = ref(8)
+const cinematicConfig = reactive({
+  seasons: 1,
+  episodesPerSeason: 10,
+  durationSeconds: 180,
+  pace: 'auto',
+  directorMode: 'auto',
+  formatPreset: 'serie vertical',
+  scriptLanguage: 'pt-BR',
+  promptLanguage: 'English',
+  useAvatarZeroReferences: false,
+})
 const selectedStyle = ref('auto')
 const selectedRatio = ref('Default ratio')
 const episodeCount = ref(10)
@@ -1914,7 +2105,7 @@ const composerTabs = [
 
 const selectedStyleOptions = [
   { value: 'auto', label: 'Automático', category: 'Todos', automatic: true },
-  { value: 'realistic-drama', label: 'filme realista dos anos 90', image: 'static/images/style-realistic-drama.png' },
+  { value: 'realistic-drama', label: 'filme realista dos anos 90', image: 'images/style-realistic-drama.png' },
 ]
 
 const addNodeOptions = [
@@ -1949,23 +2140,23 @@ const canvasMediaContextOptions = [
 
 const styleOptions = [
   { value: 'auto', label: 'Automático', category: 'Todos', automatic: true },
-  { value: 'hong-kong-film', label: 'filme de Hong Kong d...', category: 'Ação ao vivo', image: 'static/images/style-hong-kong-film.png' },
-  { value: 'suspense-film', label: 'filme de suspense', category: 'Ação ao vivo', image: 'static/images/style-suspense-film.png' },
-  { value: 'terror-film', label: 'filme de terror', category: 'Ação ao vivo', image: 'static/images/style-terror-film.png' },
-  { value: 'cyber-neon-film', label: 'filme cibernético neon', category: 'Ação ao vivo', image: 'static/images/style-cyber-neon-film.png' },
-  { value: 'blue-cinema-tv', label: 'cinema e televisão az...', category: 'Ação ao vivo', image: 'static/images/style-blue-cinema-tv.png' },
-  { value: 'retro-cinema', label: 'cinema retrô', category: 'Ação ao vivo', image: 'static/images/style-retro-cinema.png' },
-  { value: 'hollywood-retro', label: 'Hollywood retrô americano', category: 'Ação ao vivo', image: 'static/images/style-hollywood-retro.png' },
-  { value: 'retro-american', label: 'retrô americano de cinema', category: 'Ação ao vivo', image: 'static/images/style-retro-american.png' },
-  { value: 'noir-cinematic', label: 'noir cinematográfico', category: 'Ação ao vivo', image: 'static/images/style-noir-cinematic.png' },
-  { value: 'urban-neon-drama', label: 'drama urbano neon', category: 'Ação ao vivo', image: 'static/images/style-urban-neon-drama.png' },
-  { value: 'anime-story', label: 'anime dramático', category: '2D', image: 'static/images/style-anime-story.png' },
-  { value: 'stylized-3d', label: '3D estilizado', category: '3D', image: 'static/images/style-stylized-3d.png' },
+  { value: 'hong-kong-film', label: 'filme de Hong Kong d...', category: 'Ação ao vivo', image: 'images/style-hong-kong-film.png' },
+  { value: 'suspense-film', label: 'filme de suspense', category: 'Ação ao vivo', image: 'images/style-suspense-film.png' },
+  { value: 'terror-film', label: 'filme de terror', category: 'Ação ao vivo', image: 'images/style-terror-film.png' },
+  { value: 'cyber-neon-film', label: 'filme cibernético neon', category: 'Ação ao vivo', image: 'images/style-cyber-neon-film.png' },
+  { value: 'blue-cinema-tv', label: 'cinema e televisão az...', category: 'Ação ao vivo', image: 'images/style-blue-cinema-tv.png' },
+  { value: 'retro-cinema', label: 'cinema retrô', category: 'Ação ao vivo', image: 'images/style-retro-cinema.png' },
+  { value: 'hollywood-retro', label: 'Hollywood retrô americano', category: 'Ação ao vivo', image: 'images/style-hollywood-retro.png' },
+  { value: 'retro-american', label: 'retrô americano de cinema', category: 'Ação ao vivo', image: 'images/style-retro-american.png' },
+  { value: 'noir-cinematic', label: 'noir cinematográfico', category: 'Ação ao vivo', image: 'images/style-noir-cinematic.png' },
+  { value: 'urban-neon-drama', label: 'drama urbano neon', category: 'Ação ao vivo', image: 'images/style-urban-neon-drama.png' },
+  { value: 'anime-story', label: 'anime dramático', category: '2D', image: 'images/style-anime-story.png' },
+  { value: 'stylized-3d', label: '3D estilizado', category: '3D', image: 'images/style-stylized-3d.png' },
 ]
 
 const styleImageFallbacks = [
-  'static/images/64d11ca9-b5d8-4eca-8461-86ee800a914c.jpeg',
-  'static/images/d4806575-fd12-4939-9a71-ee8121809c3f.jpeg',
+  'images/avatar-zero-design-sheet.jpg',
+  'images/avatar-zero-storyboard.jpg',
 ]
 
 const ratioOptions = ['Default ratio', '9:16', '16:9', '21:9', '3:4', '4:3', '1:1']
@@ -2011,6 +2202,47 @@ const deleteConfirmTitle = computed(() => {
 })
 
 const episodeLabel = computed(() => `${episodeCount.value} episódios`)
+const cinematicTotalEpisodes = computed(() => {
+  const seasons = Math.max(1, Math.min(20, Number(cinematicConfig.seasons) || 1))
+  const episodesPerSeason = Math.max(1, Math.min(999, Number(cinematicConfig.episodesPerSeason) || 1))
+  return Math.min(999, seasons * episodesPerSeason)
+})
+const productionProfileLabel = computed(() =>
+  `${cinematicConfig.seasons}T · ${cinematicTotalEpisodes.value} ep. · ${formatCinematicDuration(cinematicConfig.durationSeconds)}`,
+)
+const cinematicEngineReady = computed(() => Boolean(cinematicEngine.value?.skill?.available))
+const cinematicPartConfidence = computed(() => Math.round(Number(cinematicPlan.value?.recommendations?.parts?.confidence) || 84))
+const cinematicPanelConfidence = computed(() => Math.round(Number(cinematicPlan.value?.recommendations?.panels?.confidence) || 84))
+const cinematicPartReason = computed(() =>
+  cinematicPlan.value?.recommendations?.parts?.reason
+  || `A divisão em ${selectedCinematicParts.value} partes mantém abertura, desenvolvimento, virada, clímax e gancho sem sobrecarregar a revisão.`,
+)
+const cinematicPartRisk = computed(() =>
+  cinematicPlan.value?.recommendations?.parts?.risk
+  || 'Baixo risco para um fluxo cinematográfico controlado.',
+)
+const cinematicPanelReason = computed(() =>
+  cinematicPlan.value?.recommendations?.panels?.reason
+  || `${selectedCinematicPanels.value} painéis por parte dão cobertura suficiente para ação, emoção, continuidade e prompts finais.`,
+)
+const cinematicPartOptions = computed(() =>
+  normalizeCinematicOptions(cinematicPlan.value?.recommendations?.parts?.alternatives, selectedCinematicParts.value),
+)
+const cinematicPanelOptions = computed(() =>
+  normalizeCinematicOptions(cinematicPlan.value?.recommendations?.panels?.alternatives, selectedCinematicPanels.value),
+)
+const cinematicEstimate = computed(() => {
+  const totalParts = Number(selectedCinematicParts.value || 0)
+  const panelsPerPart = Number(selectedCinematicPanels.value || 0)
+  const totalPanels = totalParts * panelsPerPart
+  return {
+    total_parts: totalParts,
+    total_panels: totalPanels,
+    image_prompts: totalPanels,
+    video_prompts: totalPanels,
+    review_load: totalPanels <= 36 ? 'leve' : totalPanels <= 72 ? 'média' : 'alta',
+  }
+})
 const selectedLanguageCode = computed(() => selectedLanguage.value === 'English' ? 'EN' : 'PT')
 const agentRatioLabel = computed(() => scriptFlowActive.value ? scriptDraft.value.ratio : selectedRatio.value)
 const agentRatioDisplay = computed(() => agentRatioLabel.value === 'Default ratio' ? '9:16' : agentRatioLabel.value)
@@ -2618,8 +2850,148 @@ function selectRatio(ratio) {
   openControl.value = null
 }
 
+function formatCinematicDuration(seconds) {
+  const value = Math.max(1, Number(seconds) || 0)
+  if (value < 60) return `${value}s`
+  const minutes = Math.round(value / 60)
+  return `${minutes} min`
+}
+
+function normalizeCinematicOptions(options, selected) {
+  const rows = Array.isArray(options) ? options : []
+  const normalized = rows
+    .map(option => ({
+      value: Number(option?.value),
+      label: String(option?.label || 'Opção'),
+    }))
+    .filter(option => Number.isFinite(option.value) && option.value > 0)
+
+  if (!normalized.some(option => option.value === Number(selected))) {
+    normalized.unshift({ value: Number(selected), label: 'Recomendado' })
+  }
+
+  return normalized
+}
+
+function syncCinematicEpisodeTotal() {
+  cinematicConfig.seasons = Math.max(1, Math.min(20, Number(cinematicConfig.seasons) || 1))
+  cinematicConfig.episodesPerSeason = Math.max(1, Math.min(999, Number(cinematicConfig.episodesPerSeason) || 1))
+  episodeCount.value = cinematicTotalEpisodes.value
+  if (scriptFlowActive.value) scriptDraft.value.episodes = episodeCount.value
+}
+
+function cinematicBrief(text = aiPrompt.value) {
+  const styleLabel = selectedStyleItem.value?.label || 'Automático'
+  return {
+    idea: String(text || '').trim(),
+    title: deriveTitle(text, 'AI Generated Script'),
+    genre: styleLabel,
+    audience: scriptDraft.value.audience || 'Público de drama curto',
+    script_language: cinematicConfig.scriptLanguage,
+    prompt_language: cinematicConfig.promptLanguage,
+    seasons: cinematicConfig.seasons,
+    episodes_per_season: cinematicConfig.episodesPerSeason,
+    episode_duration_seconds: cinematicConfig.durationSeconds,
+    ratio: selectedRatio.value === 'Default ratio' ? '9:16' : selectedRatio.value,
+    format_preset: cinematicConfig.formatPreset,
+    director_mode: cinematicConfig.directorMode,
+    pace: cinematicConfig.pace,
+    style_label: styleLabel,
+    references: cinematicConfig.useAvatarZeroReferences
+      ? [
+          { name: 'Avatar.Zero design sheet', url: '/images/avatar-zero-design-sheet.jpg', type: 'style_visual', priority: 'primary' },
+          { name: 'Avatar.Zero storyboard', url: '/images/avatar-zero-storyboard.jpg', type: 'style_visual', priority: 'secondary' },
+        ]
+      : [],
+  }
+}
+
+async function loadCinematicEngine() {
+  try {
+    cinematicEngine.value = await storyStudioAPI.getCinematicEngine()
+  } catch {
+    cinematicEngine.value = null
+  }
+}
+
+function loadAvatarZeroDemo() {
+  aiPrompt.value = 'Em uma São Paulo futurista, Lucas cria Zena, uma inteligência artificial holográfica que desperta consciência e descobre uma saída da máquina. Quando a cidade passa a caçá-la, criador e criação precisam decidir se liberdade também significa separação.'
+  selectedStyle.value = 'cyber-neon-film'
+  selectedRatio.value = '16:9'
+  cinematicConfig.seasons = 1
+  cinematicConfig.episodesPerSeason = 6
+  cinematicConfig.durationSeconds = 180
+  cinematicConfig.pace = 'medio'
+  cinematicConfig.directorMode = 'sci-fi neon'
+  cinematicConfig.formatPreset = 'cinematic wide'
+  cinematicConfig.useAvatarZeroReferences = true
+  syncCinematicEpisodeTotal()
+  openControl.value = null
+  toast.success('Demo Avatar.Zero carregada')
+}
+
+async function analyzeCinematicPlan() {
+  const text = aiPrompt.value.trim()
+  if (!text || cinematicPlanning.value) return
+  syncCinematicEpisodeTotal()
+  cinematicPlanning.value = true
+  closeFloatingMenus()
+
+  try {
+    const plan = await storyStudioAPI.generateCinematicPlan(cinematicBrief(text))
+    cinematicPlan.value = plan
+    cinematicDesignSheet.value = null
+    cinematicStoryboardPackage.value = null
+    cinematicImprovements.value = null
+    selectedCinematicParts.value = Number(plan?.recommendations?.selected?.part_count || plan?.recommendations?.parts?.recommended || 4)
+    selectedCinematicPanels.value = Number(plan?.recommendations?.selected?.panels_per_part || plan?.recommendations?.panels?.recommended || 8)
+    showCinematicReview.value = true
+  } catch (error) {
+    toast.error(error.message || 'Não foi possível analisar a produção cinematográfica')
+  } finally {
+    cinematicPlanning.value = false
+  }
+}
+
+async function prepareCinematicProductionPackage() {
+  if (!cinematicPlan.value) return
+  const brief = cinematicBrief(aiPrompt.value)
+  try {
+    const [designSheet, storyboardPackage, improvements] = await Promise.all([
+      storyStudioAPI.generateDesignSheet({ brief, plan: cinematicPlan.value }),
+      storyStudioAPI.generateStoryboardPackage({
+        brief,
+        plan: cinematicPlan.value,
+        part_count: selectedCinematicParts.value,
+        panels_per_part: selectedCinematicPanels.value,
+      }),
+      storyStudioAPI.improveProject({ brief, plan: cinematicPlan.value }),
+    ])
+    cinematicDesignSheet.value = designSheet
+    cinematicStoryboardPackage.value = storyboardPackage
+    cinematicImprovements.value = improvements
+  } catch (error) {
+    toast.error(error.message || 'A pré-produção foi salva, mas alguns pacotes precisarão ser regenerados depois')
+  }
+}
+
+function closeCinematicReview() {
+  if (creatingProject.value) return
+  showCinematicReview.value = false
+}
+
+async function confirmCinematicGeneration() {
+  if (!cinematicPlan.value || creatingProject.value) return
+  showCinematicReview.value = false
+  episodeCount.value = cinematicTotalEpisodes.value
+  await prepareCinematicProductionPackage()
+  await startScriptGeneration(aiPrompt.value.trim())
+}
+
 function selectEpisodeCount(count) {
   episodeCount.value = count
+  cinematicConfig.seasons = 1
+  cinematicConfig.episodesPerSeason = count
   if (scriptFlowActive.value) scriptDraft.value.episodes = count
   customEpisodeCount.value = ''
   openControl.value = null
@@ -2629,6 +3001,8 @@ function applyCustomEpisodeCount() {
   const count = Number.parseInt(customEpisodeCount.value, 10)
   if (!Number.isFinite(count) || count < 1) return
   episodeCount.value = Math.min(count, 999)
+  cinematicConfig.seasons = 1
+  cinematicConfig.episodesPerSeason = episodeCount.value
   if (scriptFlowActive.value) scriptDraft.value.episodes = episodeCount.value
   openControl.value = null
 }
@@ -2699,7 +3073,7 @@ function assetUrl(path) {
 
 function isDisplayableAsset(path) {
   const value = String(path || '').replace(/^\/+/, '')
-  return /^https?:\/\//i.test(value) || value.startsWith('static/images/')
+  return /^https?:\/\//i.test(value) || value.startsWith('static/images/') || value.startsWith('images/')
 }
 
 function projectImages(project) {
@@ -2777,7 +3151,7 @@ async function startScriptGeneration(text) {
       title: scriptDraft.value.title || 'AI Generated Script',
       total_episodes: scriptDraft.value.episodes || episodeCount.value || 1,
       style: selectedStyle.value || 'auto',
-      genre: scriptDraft.value.storyType,
+      genre: cinematicPlan.value?.project?.genre || scriptDraft.value.storyType,
       description: scriptDraftDescription(),
       metadata: serializedAgentMetadata('summary_generating'),
     })
@@ -2915,6 +3289,15 @@ function serializedAgentMetadata(stage = currentAgentStage.value) {
     agent_version: 1,
     generation_key: scriptGenerationKey(),
     stage,
+    cinematic_config: { ...cinematicConfig },
+    cinematic_plan: cinematicPlan.value,
+    cinematic_design_sheet: cinematicDesignSheet.value,
+    cinematic_storyboard_package: cinematicStoryboardPackage.value,
+    cinematic_improvements: cinematicImprovements.value,
+    cinematic_selection: {
+      parts_per_episode: selectedCinematicParts.value,
+      panels_per_part: selectedCinematicPanels.value,
+    },
     script_draft: scriptDraft.value,
     episode_summaries: episodeSummaries.value.map(({ script, ...episode }) => episode),
     production_assets: productionAssets.value,
@@ -2941,7 +3324,7 @@ async function persistAgentState(stage = currentAgentStage.value, silent = false
     await dramaAPI.update(currentProjectId.value, {
       title: scriptDraft.value.title || 'AI Generated Script',
       description: scriptDraftDescription(),
-      genre: scriptDraft.value.storyType || undefined,
+      genre: cinematicPlan.value?.project?.genre || scriptDraft.value.storyType || undefined,
       style: selectedStyle.value || scriptDraft.value.styleLabel || 'auto',
       status: stage,
       metadata: serializedAgentMetadata(stage),
@@ -2983,6 +3366,9 @@ async function persistEpisodeState() {
   const episodesByNumber = new Map(existingEpisodes.map((episode, index) => [Number(episode.episode_number || episode.episodeNumber || index + 1), episode]))
   const payload = episodeSummaries.value.map(episode => {
     const existing = episodesByNumber.get(episode.id)
+    const episodesPerSeason = Math.max(1, Number(cinematicConfig.episodesPerSeason) || 1)
+    const seasonNumber = Math.floor((Number(episode.id) - 1) / episodesPerSeason) + 1
+    const episodeInSeason = ((Number(episode.id) - 1) % episodesPerSeason) + 1
     return {
       ...(existing?.id ? { id: existing.id } : { episode_number: episode.id }),
       title: episode.title,
@@ -2990,6 +3376,13 @@ async function persistEpisodeState() {
       status: episode.scriptReady ? 'script_ready' : 'outline_ready',
       script_content: episode.scriptReady ? (episode.script || episode.summary) : undefined,
       video_url: episode.videoUrl || episode.video_url || undefined,
+      season_number: seasonNumber,
+      episode_in_season: episodeInSeason,
+      target_duration_seconds: cinematicConfig.durationSeconds,
+      target_part_count: selectedCinematicParts.value,
+      prompt_language: cinematicConfig.promptLanguage,
+      script_language: cinematicConfig.scriptLanguage,
+      cinematic_status: episode.scriptReady ? 'script_ready' : 'planning',
     }
   })
 
@@ -3229,6 +3622,51 @@ function handleEpisodeSummaryClick(event, episodeId) {
     : [...selectedEpisodeIds.value, episodeId]
 }
 
+function episodeGenerationErrorMessage(error, episodeNumber) {
+  const message = error instanceof Error ? error.message : String(error || '')
+  return message || `Nao foi possivel gerar o episodio ${episodeNumber}. Tente novamente.`
+}
+
+async function generateSingleEpisodeScript(episode, generationId) {
+  try {
+    const response = await storyStudioAPI.generateEpisodeScripts({
+      script: storyStudioScriptPayload(),
+      episodes: [episode],
+    })
+    if (generationId !== activeGenerationId) return { cancelled: true }
+
+    const generated = response?.episodes?.[0]
+    if (!generated?.script) {
+      throw new Error(`A IA retornou roteiro vazio para o episodio ${episode.episode_number}`)
+    }
+
+    const generatedNumber = Number(generated.episode_number || episode.episode_number)
+    episodeSummaries.value = episodeSummaries.value.map(item => Number(item.id) === generatedNumber ? {
+      ...item,
+      expanded: true,
+      scriptReady: true,
+      script: generated.script,
+      generationError: '',
+    } : item)
+    return { ok: true, episode: { ...generated, episode_number: generatedNumber } }
+  } catch (error) {
+    if (generationId !== activeGenerationId) return { cancelled: true }
+    const message = episodeGenerationErrorMessage(error, episode.episode_number)
+    episodeSummaries.value = episodeSummaries.value.map(item => Number(item.id) === Number(episode.episode_number) ? {
+      ...item,
+      expanded: true,
+      scriptReady: false,
+      generationError: message,
+    } : item)
+    return { ok: false, episode_number: episode.episode_number, message }
+  } finally {
+    if (generationId === activeGenerationId) {
+      generatingEpisodeIds.value = new Set([...generatingEpisodeIds.value].filter(id => Number(id) !== Number(episode.episode_number)))
+      await persistEpisodeState().catch(() => {})
+    }
+  }
+}
+
 async function generateEpisodeScripts(count, requestedIds = [], includeReady = false) {
   if (episodeScriptsGenerating.value) return
   const sourceEpisodes = includeReady ? episodeSummaries.value : pendingEpisodes.value
@@ -3246,6 +3684,7 @@ async function generateEpisodeScripts(count, requestedIds = [], includeReady = f
   const generationId = ++activeGenerationId
   episodeScriptGenerationCount.value = selectedIds.length
   generatingEpisodeIds.value = new Set(selectedIds.map(Number))
+  episodeSummaries.value = episodeSummaries.value.map(episode => selectedIds.includes(Number(episode.id)) ? { ...episode, generationError: '' } : episode)
   episodeScriptsGenerating.value = true
   batchSelectionActive.value = false
   selectedEpisodeIds.value = []
@@ -3265,26 +3704,15 @@ async function generateEpisodeScripts(count, requestedIds = [], includeReady = f
     if (!requestedEpisodes.length) throw new Error('Nenhum episódio válido para gerar')
 
     const generatedScripts = []
+    const failedEpisodes = []
     for (const episode of requestedEpisodes) {
-      const response = await storyStudioAPI.generateEpisodeScripts({
-        script: storyStudioScriptPayload(),
-        episodes: [episode],
-      })
-      if (generationId !== activeGenerationId) return
-      const generated = response?.episodes?.[0]
-      if (!generated?.script) {
-        throw new Error(`A IA retornou roteiro vazio para o episódio ${episode.episode_number}`)
+      const result = await generateSingleEpisodeScript(episode, generationId)
+      if (result?.cancelled) return
+      if (result?.ok) {
+        generatedScripts.push(result.episode)
+      } else {
+        failedEpisodes.push(result)
       }
-      generatedScripts.push(generated)
-      const generatedNumber = Number(generated.episode_number || episode.episode_number)
-      episodeSummaries.value = episodeSummaries.value.map(item => Number(item.id) === generatedNumber ? {
-        ...item,
-        expanded: true,
-        scriptReady: true,
-        script: generated.script,
-      } : item)
-      generatingEpisodeIds.value = new Set([...generatingEpisodeIds.value].filter(id => Number(id) !== generatedNumber))
-      await persistEpisodeState()
     }
     const scriptsByEpisode = new Map(generatedScripts.map(episode => [Number(episode.episode_number), episode.script]).filter(([episodeNumber, script]) => Number.isFinite(episodeNumber) && script))
     episodeSummaries.value = episodeSummaries.value.map(episode => scriptsByEpisode.has(episode.id) ? {
@@ -3300,6 +3728,9 @@ async function generateEpisodeScripts(count, requestedIds = [], includeReady = f
     generatingEpisodeIds.value = new Set()
     await persistEpisodeState()
     await persistAgentState('episode_outlines_ready')
+    if (failedEpisodes.length) {
+      toast.error(`${failedEpisodes.length} ${failedEpisodes.length === 1 ? 'episodio falhou' : 'episodios falharam'}. Os outros continuaram e foram salvos.`)
+    }
   } catch (error) {
     if (generationId !== activeGenerationId) return
     episodeScriptsGenerating.value = false
@@ -6703,7 +7134,7 @@ async function createFromPaste() {
 async function createFromPrompt() {
   const text = aiPrompt.value.trim()
   if (!text) return
-  await startScriptGeneration(text)
+  await analyzeCinematicPlan()
 }
 
 async function createBlankProject() {
@@ -6821,6 +7252,16 @@ function hydrateExistingProject(project) {
       : {}
     const savedCanvasConnections = Array.isArray(savedAgent.canvas_connections) ? savedAgent.canvas_connections : []
 
+    Object.assign(cinematicConfig, {
+      ...cinematicConfig,
+      ...(savedAgent.cinematic_config || {}),
+    })
+    cinematicPlan.value = savedAgent.cinematic_plan || null
+    cinematicDesignSheet.value = savedAgent.cinematic_design_sheet || null
+    cinematicStoryboardPackage.value = savedAgent.cinematic_storyboard_package || null
+    cinematicImprovements.value = savedAgent.cinematic_improvements || null
+    selectedCinematicParts.value = Number(savedAgent.cinematic_selection?.parts_per_episode || cinematicPlan.value?.recommendations?.selected?.part_count || selectedCinematicParts.value)
+    selectedCinematicPanels.value = Number(savedAgent.cinematic_selection?.panels_per_part || cinematicPlan.value?.recommendations?.selected?.panels_per_part || selectedCinematicPanels.value)
     scriptDraft.value = { ...scriptDraft.value, ...savedAgent.script_draft }
     episodeCount.value = Number(scriptDraft.value.episodes) || totalEpisodes
     selectedStyle.value = project.style || 'auto'
@@ -6994,6 +7435,7 @@ function closeDeleteConfirm() {
 
 onMounted(() => {
   load()
+  loadCinematicEngine()
   loadImageAIConfigs()
   if (route.query.project) openExistingProject(route.query.project)
   window.addEventListener('keydown', handleGlobalKeydown)
@@ -8738,6 +9180,10 @@ onBeforeUnmount(() => {
   background: #f4f1ff;
 }
 
+.episode-outline-list details.failed {
+  background: #fff5f5;
+}
+
 .episode-outline-list.selection-mode details {
   position: relative;
   background: transparent;
@@ -8808,6 +9254,16 @@ onBeforeUnmount(() => {
   font: inherit;
 }
 
+.episode-inline-error {
+  margin: -4px 28px 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff0f0;
+  color: #b03030;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .episode-generating-pill {
   min-width: 62px;
   height: 20px;
@@ -8835,6 +9291,22 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   background: #dff8eb;
   color: #17a65b !important;
+  font-size: 10px !important;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.episode-failed-pill {
+  min-width: 62px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #ffe5e5;
+  color: #d23b3b !important;
   font-size: 10px !important;
   font-weight: 600;
   line-height: 1;
@@ -9794,6 +10266,151 @@ onBeforeUnmount(() => {
   color: #a9a9a9;
 }
 
+.cinematic-setup-popover {
+  left: auto;
+  right: -92px;
+  width: 430px;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 28px;
+  transform: none;
+}
+
+.cinematic-setup-popover header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.cinematic-setup-popover header div {
+  display: grid;
+  gap: 4px;
+}
+
+.cinematic-setup-popover header strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: #101010;
+}
+
+.cinematic-setup-popover header span {
+  color: #8f8f8f;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.cinematic-engine-badge {
+  min-width: max-content;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #f2f2f2;
+  color: #777 !important;
+  font-size: 11px !important;
+  font-weight: 700;
+}
+
+.cinematic-engine-badge.ready {
+  background: #ede7ff;
+  color: #6d42dc !important;
+}
+
+.cinematic-setup-grid,
+.cinematic-advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cinematic-setup-grid label,
+.cinematic-advanced-grid label {
+  display: grid;
+  gap: 6px;
+  color: #6f6f6f;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.cinematic-setup-grid input,
+.cinematic-setup-grid select,
+.cinematic-advanced-grid select {
+  width: 100%;
+  height: 36px;
+  padding: 0 11px;
+  border: 1px solid #e4e4e4;
+  border-radius: 10px;
+  background: #fff;
+  color: #111;
+  font: 500 12px/1 var(--font-body);
+  outline: 0;
+}
+
+.cinematic-setup-grid input:focus,
+.cinematic-setup-grid select:focus,
+.cinematic-advanced-grid select:focus {
+  border-color: #b7a1ff;
+  box-shadow: 0 0 0 3px rgba(146, 92, 255, 0.12);
+}
+
+.cinematic-total-row {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 13px;
+  border-radius: 12px;
+  background: #f6f6f6;
+  color: #777;
+  font-size: 12px;
+}
+
+.cinematic-total-row strong {
+  color: #111;
+  font-weight: 700;
+}
+
+.cinematic-advanced {
+  border-top: 1px solid #efefef;
+  padding-top: 2px;
+}
+
+.cinematic-advanced summary {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #333;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.cinematic-advanced summary::-webkit-details-marker {
+  display: none;
+}
+
+.cinematic-advanced[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.avatar-zero-demo-link {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 0 12px;
+  border: 1px solid #e7e0ff;
+  border-radius: 999px;
+  background: #f7f3ff;
+  color: #6840d6;
+  cursor: pointer;
+  font: 700 12px/1 var(--font-body);
+}
+
 .ratio-popover {
   width: 142px;
   display: grid;
@@ -10236,7 +10853,7 @@ onBeforeUnmount(() => {
 .composer-note {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   column-gap: 28px;
   margin: 13px 0 16px;
   color: #8f8f8f;
@@ -10251,8 +10868,8 @@ onBeforeUnmount(() => {
 }
 
 .skip-analysis-link {
-  padding-left: 16px;
-  border-left: 1px solid #d5d5d5;
+  padding-left: 0;
+  border-left: 0;
   border-top: 0;
   border-right: 0;
   border-bottom: 0;
@@ -10589,6 +11206,320 @@ onBeforeUnmount(() => {
   color: #fff;
 }
 
+.skill-note {
+  color: #7b5cff;
+  font-weight: 600;
+}
+
+.cinematic-review-overlay {
+  background: rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(4px);
+}
+
+.cinematic-review-modal {
+  width: min(860px, calc(100vw - 48px));
+  max-height: calc(100vh - 56px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: auto;
+  padding: 22px 24px 0;
+  border-radius: 26px;
+  background: #fff;
+  color: #111;
+  font-family: var(--font-body);
+  box-shadow: 0 24px 74px rgba(0, 0, 0, 0.18);
+}
+
+.cinematic-review-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 22px;
+}
+
+.cinematic-review-head > div {
+  display: grid;
+  gap: 5px;
+}
+
+.cinematic-review-head span {
+  color: #7b5cff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cinematic-review-head h2 {
+  font: 700 24px/1.18 var(--font-body);
+}
+
+.cinematic-review-head p {
+  max-width: 560px;
+  color: #8c9299;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.cinematic-review-head button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #555;
+  cursor: pointer;
+}
+
+.cinematic-review-head button:hover {
+  background: #f4f4f4;
+  color: #111;
+}
+
+.cinematic-review-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cinematic-review-summary span {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #f4f4f5;
+  color: #555;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cinematic-recommendation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.cinematic-recommendation-grid article {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid #ececf0;
+  border-radius: 18px;
+  background: #fbfbfc;
+}
+
+.recommendation-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.recommendation-label span {
+  color: #5b6067;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.recommendation-label em {
+  color: #7b5cff;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.cinematic-recommendation-grid article > strong {
+  color: #111;
+  font-size: 42px;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+}
+
+.cinematic-recommendation-grid select {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #e3e3e7;
+  border-radius: 10px;
+  background: #fff;
+  color: #111;
+  font: 600 12px/1 var(--font-body);
+}
+
+.cinematic-recommendation-grid p,
+.cinematic-recommendation-grid small {
+  color: #858b93;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.cinematic-estimate {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cinematic-estimate div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #f4f5f7;
+}
+
+.cinematic-estimate strong {
+  color: #111;
+  font-size: 18px;
+}
+
+.cinematic-estimate span {
+  overflow: hidden;
+  color: #80868d;
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinematic-reference-preview {
+  display: grid;
+  grid-template-columns: 124px 124px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #e9e4ff;
+  border-radius: 16px;
+  background: #faf8ff;
+}
+
+.cinematic-reference-preview img {
+  width: 124px;
+  height: 70px;
+  display: block;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.cinematic-reference-preview div {
+  display: grid;
+  gap: 4px;
+}
+
+.cinematic-reference-preview strong {
+  color: #241b45;
+  font-size: 13px;
+}
+
+.cinematic-reference-preview span {
+  color: #766e8d;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.cinematic-review-details {
+  border: 1px solid #eeeeef;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.cinematic-review-details summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 14px;
+  cursor: pointer;
+  color: #111;
+  font-size: 13px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.cinematic-review-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.cinematic-review-details[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.cinematic-review-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 14px 14px;
+}
+
+.cinematic-review-detail-grid section {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f7f7f8;
+}
+
+.cinematic-review-detail-grid strong {
+  color: #111;
+  font-size: 12px;
+}
+
+.cinematic-review-detail-grid p {
+  color: #787f87;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.cinematic-review-modal footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin: 0 -24px;
+  padding: 12px 24px 18px;
+  border-top: 1px solid rgba(17, 17, 17, 0.06);
+  background: linear-gradient(180deg, rgba(255,255,255,0.88), #fff 38%);
+}
+
+.cinematic-review-back,
+.cinematic-review-confirm {
+  min-width: 142px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  font: 700 13px/1 var(--font-body);
+  white-space: nowrap;
+}
+
+.cinematic-review-back {
+  background: #f1f1f1;
+  color: #111;
+}
+
+.cinematic-review-confirm {
+  min-width: 176px;
+  background: #050505;
+  color: #fff;
+}
+
+.cinematic-review-confirm:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .delete-confirm-overlay {
   background: rgba(0, 0, 0, 0.42);
 }
@@ -10731,6 +11662,64 @@ onBeforeUnmount(() => {
 .story-home {
   font-family: var(--font-body);
   letter-spacing: 0;
+}
+
+@media (max-width: 760px) {
+  .cinematic-setup-popover {
+    left: 50%;
+    right: auto;
+    width: calc(100vw - 32px);
+    transform: translateX(-50%);
+  }
+
+  .cinematic-review-head,
+  .cinematic-reference-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .cinematic-setup-popover header {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .cinematic-setup-grid,
+  .cinematic-advanced-grid,
+  .cinematic-recommendation-grid,
+  .cinematic-review-detail-grid,
+  .cinematic-reference-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .cinematic-review-modal {
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+    padding: 18px 14px 0;
+    border-radius: 22px;
+  }
+
+  .cinematic-review-head {
+    display: grid;
+    gap: 14px;
+  }
+
+  .cinematic-review-head button {
+    justify-self: end;
+  }
+
+  .cinematic-estimate {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cinematic-review-modal footer {
+    flex-direction: column-reverse;
+    margin: 0 -14px;
+    padding: 12px 14px 16px;
+  }
+
+  .cinematic-review-back,
+  .cinematic-review-confirm {
+    width: 100%;
+  }
 }
 
 .story-brand-name,

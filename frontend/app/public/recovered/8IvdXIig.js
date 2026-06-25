@@ -1,1 +1,0 @@
-import{_ as o}from"./DlAUqK2U.js";import{o as s,c as t,H as r}from"./BuCMH24V.js";const c={},n={class:"studio-fullscreen"};function a(e,d){return s(),t("div",n,[r(e.$slots,"default",{},void 0,!0)])}const l=o(c,[["render",a],["__scopeId","data-v-4eb5145e"]]);export{l as default};

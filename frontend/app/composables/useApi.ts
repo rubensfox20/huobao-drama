@@ -146,6 +146,14 @@ export const dramaAPI = {
 }
 
 export const storyStudioAPI = {
+  getCinematicEngine: () => api.get('/story-studio/cinematic-engine'),
+  generateCinematicPlan: (data: any) => api.post('/story-studio/cinematic-plan', data),
+  generateDesignSheet: (data: any) => api.post('/story-studio/design-sheet', data),
+  generateStoryboardPackage: (data: any) => api.post('/story-studio/storyboard-package', data),
+  validatePrompt: (data: any) => api.post('/story-studio/prompt-validate', data),
+  improveProject: (data: any) => api.post('/story-studio/improve-project', data),
+  cinemaChat: (data: any) => api.post('/story-studio/cinema-chat', data),
+  exportPackage: (data: any) => api.post('/story-studio/export-package', data),
   generateSummary: (data: any) => api.post('/story-studio/summary', data),
   generateEpisodeOutlines: (data: any) => api.post('/story-studio/episode-outlines', data),
   generateEpisodeScripts: (data: any) => api.post('/story-studio/episode-scripts', data),

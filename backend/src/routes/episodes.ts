@@ -59,6 +59,13 @@ const updateEpisodeSchema = z.object({
   status: z.string().optional(),
   default_motion_preset: z.string().optional(),
   default_subtitle_mode: z.string().optional(),
+  season_number: z.coerce.number().int().positive().optional(),
+  episode_in_season: z.coerce.number().int().positive().optional(),
+  target_duration_seconds: z.coerce.number().int().positive().optional(),
+  target_part_count: z.coerce.number().int().positive().optional(),
+  prompt_language: z.string().optional(),
+  script_language: z.string().optional(),
+  cinematic_status: z.string().optional(),
 }).refine(value => Object.keys(value).length > 0, {
   message: 'At least one updatable field is required',
 })
@@ -177,6 +184,13 @@ app.put('/:id', async (c) => {
   if (body.status !== undefined) updates.status = body.status
   if (body.default_motion_preset !== undefined) updates.defaultMotionPreset = body.default_motion_preset
   if (body.default_subtitle_mode !== undefined) updates.defaultSubtitleMode = body.default_subtitle_mode
+  if (body.season_number !== undefined) updates.seasonNumber = body.season_number
+  if (body.episode_in_season !== undefined) updates.episodeInSeason = body.episode_in_season
+  if (body.target_duration_seconds !== undefined) updates.targetDurationSeconds = body.target_duration_seconds
+  if (body.target_part_count !== undefined) updates.targetPartCount = body.target_part_count
+  if (body.prompt_language !== undefined) updates.promptLanguage = body.prompt_language
+  if (body.script_language !== undefined) updates.scriptLanguage = body.script_language
+  if (body.cinematic_status !== undefined) updates.cinematicStatus = body.cinematic_status
 
   db.update(schema.episodes).set(updates).where(eq(schema.episodes.id, paramResult.data.id)).run()
   return success(c)

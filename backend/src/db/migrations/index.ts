@@ -23,6 +23,26 @@ function markApplied(sqlite: Database.Database, id: string) {
   sqlite.prepare('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)').run(id, new Date().toISOString())
 }
 
+function sleepSync(ms: number) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+function execWithBusyRetry(sqlite: Database.Database, ddl: string) {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      sqlite.exec(ddl)
+      return
+    } catch (error) {
+      const message = String(error instanceof Error ? error.message : error || '')
+      if (!/database is locked|SQLITE_BUSY|SQLITE_LOCKED/i.test(message)) throw error
+      lastError = error
+      sleepSync(60 + attempt * 90)
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('SQLite database is locked')
+}
+
 function addColumnIfMissing(sqlite: Database.Database, table: string, column: string, definition: string) {
   const tableExists = sqlite.prepare(
     `SELECT 1 as ok FROM sqlite_master WHERE type='table' AND name=? LIMIT 1`,
@@ -30,7 +50,7 @@ function addColumnIfMissing(sqlite: Database.Database, table: string, column: st
   if (!tableExists) return
   const columns = sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
   if (!columns.some(col => col.name === column)) {
-    sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+    execWithBusyRetry(sqlite, `ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
   }
 }
 
@@ -39,7 +59,7 @@ function createIndexIfMissing(sqlite: Database.Database, indexName: string, ddl:
     `SELECT 1 as ok FROM sqlite_master WHERE type='index' AND name=? LIMIT 1`,
   ).get(indexName) as { ok: number } | undefined
   if (!existing) {
-    sqlite.exec(ddl)
+    execWithBusyRetry(sqlite, ddl)
   }
 }
 
@@ -94,6 +114,40 @@ const migrations: Migration[] = [
     id: '003_provider_usage_retention_index',
     up: (sqlite) => {
       createIndexIfMissing(sqlite, 'idx_provider_usage_events_created_at', 'CREATE INDEX idx_provider_usage_events_created_at ON provider_usage_events (created_at)')
+    },
+  },
+  {
+    id: '004_cinematic_production_engine',
+    up: (sqlite) => {
+      addColumnIfMissing(sqlite, 'episodes', 'season_number', 'INTEGER DEFAULT 1')
+      addColumnIfMissing(sqlite, 'episodes', 'episode_in_season', 'INTEGER')
+      addColumnIfMissing(sqlite, 'episodes', 'target_duration_seconds', 'INTEGER')
+      addColumnIfMissing(sqlite, 'episodes', 'target_part_count', 'INTEGER')
+      addColumnIfMissing(sqlite, 'episodes', 'prompt_language', 'TEXT')
+      addColumnIfMissing(sqlite, 'episodes', 'script_language', 'TEXT')
+      addColumnIfMissing(sqlite, 'episodes', 'cinematic_status', 'TEXT')
+
+      addColumnIfMissing(sqlite, 'storyboards', 'part_number', 'INTEGER')
+      addColumnIfMissing(sqlite, 'storyboards', 'panel_number', 'INTEGER')
+      addColumnIfMissing(sqlite, 'storyboards', 'time_start_ms', 'INTEGER')
+      addColumnIfMissing(sqlite, 'storyboards', 'time_end_ms', 'INTEGER')
+      addColumnIfMissing(sqlite, 'storyboards', 'panel_caption', 'TEXT')
+      addColumnIfMissing(sqlite, 'storyboards', 'scene_speed', 'TEXT')
+      addColumnIfMissing(sqlite, 'storyboards', 'negative_prompt', 'TEXT')
+      addColumnIfMissing(sqlite, 'storyboards', 'prompt_layers', 'TEXT')
+      addColumnIfMissing(sqlite, 'storyboards', 'model_adapters', 'TEXT')
+      addColumnIfMissing(sqlite, 'storyboards', 'quality_score', 'REAL')
+      addColumnIfMissing(sqlite, 'storyboards', 'version', 'INTEGER DEFAULT 1')
+      addColumnIfMissing(sqlite, 'storyboards', 'reproducibility', 'TEXT')
+
+      addColumnIfMissing(sqlite, 'assets', 'scope_type', 'TEXT')
+      addColumnIfMissing(sqlite, 'assets', 'scope_id', 'INTEGER')
+      addColumnIfMissing(sqlite, 'assets', 'reference_priority', 'TEXT')
+      addColumnIfMissing(sqlite, 'assets', 'approval_status', 'TEXT')
+      addColumnIfMissing(sqlite, 'assets', 'metadata', 'TEXT')
+
+      createIndexIfMissing(sqlite, 'idx_storyboards_episode_part_panel', 'CREATE INDEX idx_storyboards_episode_part_panel ON storyboards (episode_id, part_number, panel_number)')
+      createIndexIfMissing(sqlite, 'idx_assets_scope', 'CREATE INDEX idx_assets_scope ON assets (scope_type, scope_id)')
     },
   },
 ]

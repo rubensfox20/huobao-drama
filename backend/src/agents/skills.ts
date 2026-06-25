@@ -8,9 +8,9 @@ const SKILLS_DIR = path.resolve(__dirname, '../../../skills')
 const AGENT_SKILL_MAP: Record<string, string[]> = {
   script_rewriter: ['script_rewriter'],
   extractor: ['extractor'],
-  storyboard_breaker: ['storyboard_breaker', 'storyboard-attribute-extractor'],
+  storyboard_breaker: ['ai-video-prompt-writer', 'storyboard_breaker', 'storyboard-attribute-extractor'],
   voice_assigner: ['voice_assigner'],
-  grid_prompt_generator: ['grid_prompt_generator'],
+  grid_prompt_generator: ['ai-video-prompt-writer', 'grid_prompt_generator'],
 }
 
 function stripFrontmatter(content: string): string {

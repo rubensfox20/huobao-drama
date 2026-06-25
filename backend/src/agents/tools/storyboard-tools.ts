@@ -165,6 +165,12 @@ export function createStoryboardTools(episodeId: number, dramaId: number) {
     inputSchema: z.object({
       storyboards: z.array(z.object({
         shot_number: z.number(),
+        part_number: z.number().optional(),
+        panel_number: z.number().optional(),
+        time_start_ms: z.number().optional(),
+        time_end_ms: z.number().optional(),
+        panel_caption: z.string().optional(),
+        scene_speed: z.string().optional(),
         title: z.string().optional(),
         shot_type: z.string().optional(),
         angle: z.string().optional(),
@@ -178,6 +184,11 @@ export function createStoryboardTools(episodeId: number, dramaId: number) {
         atmosphere: z.string().optional(),
         image_prompt: z.string().optional(),
         video_prompt: z.string().optional(),
+        negative_prompt: z.string().optional(),
+        prompt_layers: z.record(z.string(), z.any()).optional(),
+        model_adapters: z.array(z.record(z.string(), z.any())).optional(),
+        quality_score: z.number().optional(),
+        reproducibility: z.record(z.string(), z.any()).optional(),
         bgm_prompt: z.string().optional(),
         sound_effect: z.string().optional(),
         duration: z.number().optional(),
@@ -210,6 +221,12 @@ export function createStoryboardTools(episodeId: number, dramaId: number) {
       storyboard_id: z.number(),
       title: z.string().optional(),
       shot_type: z.string().optional(),
+      part_number: z.number().optional(),
+      panel_number: z.number().optional(),
+      time_start_ms: z.number().optional(),
+      time_end_ms: z.number().optional(),
+      panel_caption: z.string().optional(),
+      scene_speed: z.string().optional(),
       angle: z.string().optional(),
       movement: z.string().optional(),
       location: z.string().optional(),
@@ -219,6 +236,11 @@ export function createStoryboardTools(episodeId: number, dramaId: number) {
       atmosphere: z.string().optional(),
       image_prompt: z.string().optional(),
       video_prompt: z.string().optional(),
+      negative_prompt: z.string().optional(),
+      prompt_layers: z.record(z.string(), z.any()).optional(),
+      model_adapters: z.array(z.record(z.string(), z.any())).optional(),
+      quality_score: z.number().optional(),
+      reproducibility: z.record(z.string(), z.any()).optional(),
       bgm_prompt: z.string().optional(),
       sound_effect: z.string().optional(),
       description: z.string().optional(),
@@ -249,6 +271,12 @@ export function createStoryboardTools(episodeId: number, dramaId: number) {
       const updates: Record<string, any> = { updatedAt: now() }
       if ('title' in fields) updates.title = fields.title
       if ('shot_type' in fields) updates.shotType = fields.shot_type
+      if ('part_number' in fields) updates.partNumber = fields.part_number
+      if ('panel_number' in fields) updates.panelNumber = fields.panel_number
+      if ('time_start_ms' in fields) updates.timeStartMs = fields.time_start_ms
+      if ('time_end_ms' in fields) updates.timeEndMs = fields.time_end_ms
+      if ('panel_caption' in fields) updates.panelCaption = fields.panel_caption
+      if ('scene_speed' in fields) updates.sceneSpeed = fields.scene_speed
       if ('angle' in fields) updates.angle = fields.angle
       if ('movement' in fields) updates.movement = fields.movement
       if ('location' in fields) updates.location = fields.location
@@ -258,6 +286,11 @@ export function createStoryboardTools(episodeId: number, dramaId: number) {
       if ('atmosphere' in fields) updates.atmosphere = fields.atmosphere
       if ('image_prompt' in fields) updates.imagePrompt = sanitizeVisualPrompt(fields.image_prompt)
       if ('video_prompt' in fields) updates.videoPrompt = sanitizeVisualPrompt(fields.video_prompt)
+      if ('negative_prompt' in fields) updates.negativePrompt = sanitizeSupportPrompt(fields.negative_prompt)
+      if ('prompt_layers' in fields) updates.promptLayers = JSON.stringify(fields.prompt_layers || {})
+      if ('model_adapters' in fields) updates.modelAdapters = JSON.stringify(fields.model_adapters || [])
+      if ('quality_score' in fields) updates.qualityScore = fields.quality_score
+      if ('reproducibility' in fields) updates.reproducibility = JSON.stringify(fields.reproducibility || {})
       if ('bgm_prompt' in fields) updates.bgmPrompt = sanitizeSupportPrompt(fields.bgm_prompt)
       if ('sound_effect' in fields) updates.soundEffect = sanitizeSupportPrompt(fields.sound_effect)
       if ('description' in fields) updates.description = fields.description

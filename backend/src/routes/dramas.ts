@@ -132,6 +132,20 @@ const episodeMutationSchema = z.object({
   defaultMotionPreset: nullableTrimmedStringSchema,
   default_subtitle_mode: nullableTrimmedStringSchema,
   defaultSubtitleMode: nullableTrimmedStringSchema,
+  season_number: nullableIntSchema,
+  seasonNumber: nullableIntSchema,
+  episode_in_season: nullableIntSchema,
+  episodeInSeason: nullableIntSchema,
+  target_duration_seconds: nullableIntSchema,
+  targetDurationSeconds: nullableIntSchema,
+  target_part_count: nullableIntSchema,
+  targetPartCount: nullableIntSchema,
+  prompt_language: nullableTrimmedStringSchema,
+  promptLanguage: nullableTrimmedStringSchema,
+  script_language: nullableTrimmedStringSchema,
+  scriptLanguage: nullableTrimmedStringSchema,
+  cinematic_status: nullableTrimmedStringSchema,
+  cinematicStatus: nullableTrimmedStringSchema,
 }).strict().superRefine((value, ctx) => {
   const hasEditableField = [
     value.episode_number,
@@ -154,6 +168,20 @@ const episodeMutationSchema = z.object({
     value.defaultMotionPreset,
     value.default_subtitle_mode,
     value.defaultSubtitleMode,
+    value.season_number,
+    value.seasonNumber,
+    value.episode_in_season,
+    value.episodeInSeason,
+    value.target_duration_seconds,
+    value.targetDurationSeconds,
+    value.target_part_count,
+    value.targetPartCount,
+    value.prompt_language,
+    value.promptLanguage,
+    value.script_language,
+    value.scriptLanguage,
+    value.cinematic_status,
+    value.cinematicStatus,
   ].some(field => field !== undefined)
 
   if (value.id && !hasEditableField) {
@@ -247,6 +275,27 @@ function buildEpisodeMutationPatch(input: z.infer<typeof episodeMutationSchema>)
 
   const defaultSubtitleMode = pickFirstDefined(input.default_subtitle_mode, input.defaultSubtitleMode)
   if (defaultSubtitleMode !== undefined) patch.defaultSubtitleMode = normalizeTrimmedString(defaultSubtitleMode)
+
+  const seasonNumber = pickFirstDefined(input.season_number, input.seasonNumber)
+  if (seasonNumber !== undefined) patch.seasonNumber = seasonNumber
+
+  const episodeInSeason = pickFirstDefined(input.episode_in_season, input.episodeInSeason)
+  if (episodeInSeason !== undefined) patch.episodeInSeason = episodeInSeason
+
+  const targetDurationSeconds = pickFirstDefined(input.target_duration_seconds, input.targetDurationSeconds)
+  if (targetDurationSeconds !== undefined) patch.targetDurationSeconds = targetDurationSeconds
+
+  const targetPartCount = pickFirstDefined(input.target_part_count, input.targetPartCount)
+  if (targetPartCount !== undefined) patch.targetPartCount = targetPartCount
+
+  const promptLanguage = pickFirstDefined(input.prompt_language, input.promptLanguage)
+  if (promptLanguage !== undefined) patch.promptLanguage = normalizeTrimmedString(promptLanguage)
+
+  const scriptLanguage = pickFirstDefined(input.script_language, input.scriptLanguage)
+  if (scriptLanguage !== undefined) patch.scriptLanguage = normalizeTrimmedString(scriptLanguage)
+
+  const cinematicStatus = pickFirstDefined(input.cinematic_status, input.cinematicStatus)
+  if (cinematicStatus !== undefined) patch.cinematicStatus = normalizeTrimmedString(cinematicStatus)
 
   return patch
 }
@@ -643,6 +692,13 @@ app.put('/:id/episodes', async (c) => {
       audioConfigId: patch.audioConfigId,
       defaultMotionPreset: patch.defaultMotionPreset,
       defaultSubtitleMode: patch.defaultSubtitleMode,
+      seasonNumber: patch.seasonNumber,
+      episodeInSeason: patch.episodeInSeason,
+      targetDurationSeconds: patch.targetDurationSeconds,
+      targetPartCount: patch.targetPartCount,
+      promptLanguage: patch.promptLanguage,
+      scriptLanguage: patch.scriptLanguage,
+      cinematicStatus: patch.cinematicStatus,
       createdAt: ts,
       updatedAt: ts,
     }

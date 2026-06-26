@@ -28,7 +28,7 @@
             <button class="agent-step" :class="{ active: agentStep === 2, done: agentStep > 2, clickable: canOpenAgentStep(2) }" type="button" :disabled="!canOpenAgentStep(2)" @click.stop="openAgentStep(2)"><span><Check v-if="agentStep > 2" :size="15" /><template v-else>2</template></span><strong>Ativos de produção</strong></button>
             <i></i>
             <button class="agent-step" :class="{ active: agentStep === 3, clickable: canOpenAgentStep(3) }" type="button" :disabled="!canOpenAgentStep(3)" @click.stop="openAgentStep(3)"><span><Check v-if="agentStep > 3" :size="15" /><template v-else>3</template></span><strong>Episódios</strong></button>
-          </div>
+           </div>
         </template>
 
         <div class="agent-actions">
@@ -111,6 +111,50 @@
           </button>
           <button class="canvas-tool-button" type="button" :class="{ 'library-open': productionLibraryOpen }" aria-label="Biblioteca" @click.stop="toggleProductionLibrary"><Folder :size="20" /></button>
           <button class="canvas-tool-button" type="button" aria-label="Ajuda" @click.stop="toggleScreenHelp"><HelpCircle :size="20" /></button>
+        </aside>
+
+        <aside class="canvas-ai-assistant" :class="{ collapsed: canvasAssistantCollapsed }" @click.stop>
+          <button class="canvas-ai-collapse" type="button" :aria-label="canvasAssistantCollapsed ? 'Abrir chat IA' : 'Recolher chat IA'" @click="canvasAssistantCollapsed = !canvasAssistantCollapsed">
+            <MessageCircle :size="18" />
+          </button>
+          <template v-if="!canvasAssistantCollapsed">
+            <header>
+              <div>
+                <span>IA NO CANVAS</span>
+                <strong>{{ canvasAssistantTitle }}</strong>
+              </div>
+              <small>{{ canvasAssistantContextLabel }}</small>
+            </header>
+            <div class="canvas-ai-messages" ref="canvasChatMessagesRef">
+              <div v-if="!chatMessages.length" class="canvas-ai-empty">
+                <Sparkles :size="24" />
+                <p>Selecione um item ou peca ajuda para organizar temporadas, episodios, paineis e prompts.</p>
+              </div>
+              <div v-for="(msg, idx) in chatMessages" :key="'canvas-chat-' + idx" :class="['chat-msg', `is-${msg.role}`]">
+                <div class="chat-msg-avatar">{{ msg.role === 'user' ? 'U' : 'IA' }}</div>
+                <div class="chat-msg-body">
+                  <p>{{ msg.text }}</p>
+                  <div v-if="msg.actions?.length" class="chat-actions">
+                    <button v-for="action in msg.actions" :key="action" type="button" class="btn btn-sm" @click="executeChatAction(action)">{{ chatActionLabel(action) }}</button>
+                  </div>
+                </div>
+              </div>
+              <div v-if="chatLoading" class="chat-msg is-assistant">
+                <div class="chat-msg-avatar">IA</div>
+                <div class="chat-msg-body"><LoaderCircle :size="16" class="animate-spin" /></div>
+              </div>
+            </div>
+            <div class="canvas-ai-suggestions">
+              <button type="button" @click="sendCanvasQuickAction('melhore esse episodio')">Melhorar</button>
+              <button type="button" @click="sendCanvasQuickAction('refaca esse painel mais dramatico')">Refazer painel</button>
+              <button type="button" @click="sendCanvasQuickAction('ajuste o prompt para Kling')">Kling</button>
+              <button type="button" @click="sendCanvasQuickAction('verifique continuidade desse personagem')">Continuidade</button>
+            </div>
+            <form class="canvas-ai-input" @submit.prevent="sendChatMessage('canvas_chat')">
+              <textarea v-model="canvasAssistantInput" rows="2" placeholder="Peça uma edição no item selecionado..." :disabled="chatLoading"></textarea>
+              <button type="submit" class="btn btn-primary btn-icon" :disabled="!canvasAssistantInput.trim() || chatLoading"><ArrowUp :size="17" /></button>
+            </form>
+          </template>
         </aside>
 
         <section v-if="addNodeMenuOpen" class="add-node-menu" @mouseenter="cancelAddNodeMenuClose" @mouseleave="scheduleAddNodeMenuClose" @click.stop>
@@ -769,6 +813,34 @@
       </main>
 
       <main v-else-if="productionAssetsReady" class="agent-main production-assets-main">
+        <div class="production-pipeline-row">
+          <div class="pipeline-card-sm" :class="{ done: visualBible }" @click="showVisualBible = true">
+            <BookOpen :size="16" /><span>Biblia Visual</span>
+            <Check v-if="visualBible" :size="13" />
+          </div>
+          <div class="pipeline-card-sm" :class="{ done: designSheetData }" @click="showDesignSheet = true">
+            <Palette :size="16" /><span>Design Sheet</span>
+            <Check v-if="designSheetData" :size="13" />
+          </div>
+          <div class="pipeline-card-sm" :class="{ done: selectedNarrativeTemplate }" @click="showNarrativeTemplates = true">
+            <FileText :size="16" /><span>Template</span>
+            <Check v-if="selectedNarrativeTemplate" :size="13" />
+          </div>
+          <div class="pipeline-card-sm" :class="{ done: storyboardParts.length }" @click="storyboardParts.length && (showStoryboardViewer = true)">
+            <Image :size="16" /><span>Storyboard</span>
+            <Check v-if="storyboardParts.length" :size="13" />
+          </div>
+          <div class="pipeline-card-sm" @click="showCinematicChat">
+            <MessageCircle :size="16" /><span>Chat IA</span>
+          </div>
+          <div class="pipeline-card-sm" @click="loadProductionDashboard">
+            <ListChecks :size="16" /><span>Dashboard</span>
+          </div>
+          <div class="pipeline-card-sm" @click="showExportModal = true">
+            <Download :size="16" /><span>Exportar</span>
+          </div>
+        </div>
+
         <div class="production-assets-toolbar">
           <nav class="production-tabs" aria-label="Tipos de ativos">
             <button
@@ -830,7 +902,7 @@
                 class="asset-card-menu-trigger"
                 :class="{ active: openProductionAssetMenuKey === productionAssetKey(item, index) }"
                 type="button"
-                aria-label="Opções do ativo"
+                aria-label="Opcoes do ativo"
                 @click.stop="toggleProductionAssetMenu(item, index)"
               >
                 <MoreHorizontal :size="19" />
@@ -862,7 +934,7 @@
               <Plus class="create-plus-icon" :size="40" />
               <X v-if="isCanvasImageAsset(activeProductionTab)" class="create-close-icon" :size="40" />
             </div>
-            <h3>{{ activeProductionTab === 'media' ? 'Nova mídia' : activeProductionTab === 'objects' ? 'Novo objeto' : `New ${activeProductionTab === 'roles' ? 'role' : 'scene'}` }}</h3>
+            <h3>{{ activeProductionTab === 'media' ? 'Nova midia' : activeProductionTab === 'objects' ? 'Novo objeto' : `New ${activeProductionTab === 'roles' ? 'role' : 'scene'}` }}</h3>
             <p v-if="!isCanvasImageAsset(activeProductionTab)">Criar na tela</p>
             <div v-if="isCanvasImageAsset(activeProductionTab)" class="asset-create-menu" @click.stop>
               <button type="button" @click="openCanvasImageUpload(activeProductionTab, productionAssets[activeProductionTab].length)"><UploadCloud :size="17" /> Carregar do computador</button>
@@ -943,8 +1015,124 @@
             </div>
           </div>
         </section>
-        <section class="script-structure-card" :class="{ generating: scriptGenerating || episodeOutlineGenerating || episodeScriptsGenerating, 'episodes-ready': episodeOutlinesReady }">
+        <section class="script-structure-card" :class="{ generating: scriptGenerating || episodeOutlineGenerating || episodeScriptsGenerating, 'episodes-ready': episodeOutlinesReady, 'chat-only': showScriptChatView }">
           <div class="script-card-scroll">
+            <template v-if="showScriptChatView">
+              <section class="script-chat-panel" aria-label="Assistente de roteiro">
+                <div class="script-chat-messages" ref="chatMessagesRef">
+                  <article class="script-chat-turn is-user">
+                    <div class="script-chat-avatar">Voce</div>
+                    <div class="script-chat-bubble">
+                      <span>Ideia enviada</span>
+                      <p>{{ scriptDraft.idea }}</p>
+                    </div>
+                  </article>
+
+                  <article class="script-chat-turn is-assistant">
+                    <div class="script-chat-avatar">IA</div>
+                    <div class="script-chat-bubble">
+                      <span>{{ scriptGenerating ? 'Gerando roteiro por etapa' : 'Roteiro pronto para revisao' }}</span>
+                      <p>{{ scriptGenerating ? 'Estou transformando sua ideia em estrutura de roteiro. As etapas aparecem aqui conforme ficam prontas.' : 'Revise os artefatos abaixo e use o chat para pedir ajustes antes de avancar.' }}</p>
+                      <div class="script-chat-steps">
+                        <div v-for="step in scriptGenerationSteps" :key="step.key" class="script-chat-step" :class="step.status">
+                          <span><LoaderCircle v-if="step.status === 'running'" :size="13" class="animate-spin" /><Check v-else-if="step.status === 'done'" :size="13" /><i v-else></i></span>
+                          <strong>{{ step.label }}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+
+                  <article v-if="generatedScriptReady" class="script-chat-turn is-assistant">
+                    <div class="script-chat-avatar">IA</div>
+                    <div class="script-chat-bubble artifact-bubble">
+                      <span>Artefatos do roteiro</span>
+                      <div class="script-artifact-stack">
+                        <section class="script-artifact-card script-original-card">
+                          <small>Ideia original</small>
+                          <p>{{ scriptDraft.idea }}</p>
+                        </section>
+
+                        <section class="script-artifact-card script-summary-card">
+                          <small>Resumo do roteiro</small>
+                          <strong>{{ scriptDraft.title || 'AI Generated Script' }}</strong>
+                          <p>{{ scriptDraft.synopsis || scriptDraft.shortSynopsis || 'Resumo em preparacao.' }}</p>
+                        </section>
+
+                        <div class="script-artifact-grid">
+                          <section v-for="artifact in scriptMetadataCards" :key="artifact.key" class="script-artifact-card">
+                            <small>{{ artifact.label }}</small>
+                            <strong>{{ artifact.title }}</strong>
+                            <p v-if="artifact.body">{{ artifact.body }}</p>
+                          </section>
+                        </div>
+
+                        <section v-for="prompt in scriptPromptCards" :key="prompt.key" class="script-prompt-card">
+                          <header>
+                            <h3>{{ prompt.title }}</h3>
+                            <div>
+                              <form v-if="activeScriptPromptRequestKey === prompt.key" class="script-prompt-ai-request" @submit.prevent="requestScriptPromptChanges(prompt)">
+                                <input v-model="scriptPromptAiRequests[prompt.key]" type="text" placeholder="Solicitar alteracoes" :disabled="chatLoading" />
+                                <button type="submit" aria-label="Solicitar alteracoes" :disabled="!String(scriptPromptAiRequests[prompt.key] || '').trim() || chatLoading">
+                                  <LoaderCircle v-if="chatLoading" :size="14" class="animate-spin" />
+                                  <ArrowUp v-else :size="14" />
+                                </button>
+                              </form>
+                              <button v-else type="button" @click="openScriptPromptRequest(prompt.key)"><Pencil :size="15" />Solicitar alteracoes</button>
+                              <button type="button" :aria-label="`Copiar ${prompt.title}`" @click="copyScriptPromptCard(prompt)"><Copy :size="16" /></button>
+                              <button type="button" :aria-label="`Expandir ${prompt.title}`" @click="expandScriptPromptCard(prompt)"><Maximize2 :size="16" /></button>
+                            </div>
+                          </header>
+                          <textarea :value="prompt.body" class="script-prompt-editor" rows="7" spellcheck="true" @input="updateScriptPromptCard(prompt.key, $event.target.value)"></textarea>
+                        </section>
+
+                        <section class="script-episode-artifacts">
+                          <header>
+                            <small>Roteiro do episodio</small>
+                            <strong>{{ scriptEpisodeArtifactTitle }}</strong>
+                          </header>
+                          <div class="script-episode-list">
+                            <article v-for="episode in scriptEpisodeArtifactCards" :key="episode.key">
+                              <span>{{ episode.label }}</span>
+                              <strong>{{ episode.title }}</strong>
+                              <p>{{ episode.body }}</p>
+                            </article>
+                          </div>
+                        </section>
+                      </div>
+                      <div class="script-chat-next">
+                        <button type="button" @click="sendStudioQuickAction('Melhore o roteiro mantendo a estrutura atual')"><Sparkles :size="14" />Melhorar roteiro</button>
+                        <button type="button" @click="sendStudioQuickAction('Faca perguntas para completar o roteiro antes dos episodios')"><MessageCircle :size="14" />Perguntar o que falta</button>
+                        <button type="button" :disabled="creatingProject" @click="continueGeneratedScript"><ChevronRight :size="14" />Avancar</button>
+                      </div>
+                    </div>
+                  </article>
+
+                  <div v-if="false" class="script-chat-empty">
+                    <Sparkles :size="30" />
+                    <p>{{ scriptGenerating ? 'Enquanto a IA expande sua ideia, diga o que quer ajustar no roteiro.' : 'O roteiro base e as definicoes foram criados. Peça ajustes ou envie uma orientação antes dos episodios.' }}</p>
+                  </div>
+                  <div v-for="(msg, idx) in scriptVisibleChatMessages" :key="'script-chat-inline-' + idx" :class="['chat-msg', `is-${msg.role}`]">
+                    <div class="chat-msg-avatar">{{ msg.role === 'user' ? 'U' : 'IA' }}</div>
+                    <div class="chat-msg-body">
+                      <p>{{ msg.text }}</p>
+                      <div v-if="msg.actions?.length" class="chat-actions">
+                        <button v-for="action in msg.actions" :key="action" type="button" class="btn btn-sm" @click="executeChatAction(action)">{{ chatActionLabel(action) }}</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="chatLoading" class="chat-msg is-assistant">
+                    <div class="chat-msg-avatar">IA</div>
+                    <div class="chat-msg-body"><LoaderCircle :size="16" class="animate-spin" /></div>
+                  </div>
+                </div>
+                <form v-if="false" class="script-chat-input" @submit.prevent="sendChatMessage('studio_chat')">
+                  <textarea v-model="chatInput" rows="2" placeholder="Digite uma mensagem para a IA..." :disabled="chatLoading"></textarea>
+                  <button type="submit" aria-label="Enviar" :disabled="!chatInput.trim() || chatLoading"><ArrowUp :size="18" /></button>
+                </form>
+              </section>
+            </template>
+
+            <template v-else>
             <details class="script-section" :open="!generatedScriptReady && !episodeOutlineGenerating">
               <summary><ChevronRight class="summary-chevron" :size="16" /> Ideia original</summary>
               <p v-if="scriptGenerating || generatedScriptReady" class="script-locked-value">{{ scriptDraft.idea }}</p>
@@ -958,7 +1146,8 @@
                 <summary><ChevronRight class="summary-chevron" :size="16" /> Resumo do roteiro</summary>
                 <template v-if="summaryLocked">
                   <div class="script-summary-readonly-grid">
-                    <div><span>Número personalizado de episódios</span><strong>{{ scriptDraft.episodes }}</strong></div>
+                    <div><span>Temporadas</span><strong>{{ scriptDraft.seasons || 1 }}</strong></div>
+                    <div><span>Episódios</span><strong>{{ scriptDraft.episodes }}</strong></div>
                     <div><span>Tipo de história</span><strong>{{ scriptDraft.storyType }}</strong></div>
                     <div><span>Público-alvo</span><strong>{{ scriptDraft.audience }}</strong></div>
                   </div>
@@ -971,7 +1160,17 @@
                 <template v-else>
                   <div class="script-summary-grid">
                     <div class="script-inline-field">
-                      <label for="script-episode-count">Número personalizado de episódios</label>
+                      <label for="script-seasons">Temporadas</label>
+                      <div class="episode-number-control">
+                        <input id="script-seasons" v-model.number="scriptDraft.seasons" type="number" min="1" max="20" />
+                        <div class="episode-stepper" aria-label="Alterar temporadas">
+                          <button type="button" aria-label="Aumentar temporadas" :disabled="scriptDraft.seasons >= 20" @click="scriptDraft.seasons++"><ChevronUp :size="11" /></button>
+                          <button type="button" aria-label="Diminuir temporadas" :disabled="scriptDraft.seasons <= 1" @click="scriptDraft.seasons--"><ChevronDown :size="11" /></button>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="script-inline-field">
+                      <label for="script-episode-count">Episódios / temporada</label>
                       <div class="episode-number-control">
                         <input id="script-episode-count" v-model.number="scriptDraft.episodes" type="number" min="1" max="999" @change="syncEpisodeCountFromDraft" />
                         <div class="episode-stepper" aria-label="Alterar número de episódios">
@@ -1021,11 +1220,60 @@
                 </div>
               </details>
             </template>
+            </template>
           </div>
+        </section>
+
+        <section v-if="false" class="studio-chat-home script-stage-chat" aria-label="Assistente de roteiro">
+          <div class="studio-chat-head">
+            <div>
+              <span>ASSISTENTE DE PRODUCAO</span>
+              <strong>Revise o roteiro antes dos episodios</strong>
+            </div>
+          </div>
+          <div class="studio-chat-log" ref="chatMessagesRef">
+            <div v-if="!chatMessages.length" class="studio-chat-empty">
+              <Sparkles :size="30" />
+              <p>O roteiro base e as definicoes foram criados. Peca ajustes para a IA ou continue para gerar os episodios.</p>
+            </div>
+            <div v-for="(msg, idx) in chatMessages" :key="'script-chat-' + idx" :class="['chat-msg', `is-${msg.role}`]">
+              <div class="chat-msg-avatar">{{ msg.role === 'user' ? 'U' : 'IA' }}</div>
+              <div class="chat-msg-body">
+                <p>{{ msg.text }}</p>
+                <div v-if="msg.actions?.length" class="chat-actions">
+                  <button v-for="action in msg.actions" :key="action" type="button" class="btn btn-sm" @click="executeChatAction(action)">{{ chatActionLabel(action) }}</button>
+                </div>
+              </div>
+            </div>
+            <div v-if="chatLoading" class="chat-msg is-assistant">
+              <div class="chat-msg-avatar">IA</div>
+              <div class="chat-msg-body"><LoaderCircle :size="16" class="animate-spin" /></div>
+            </div>
+          </div>
+          <div class="studio-chat-actions">
+            <button type="button" @click="sendStudioQuickAction('Melhore o gancho e a sinopse mantendo as definicoes atuais')"><Sparkles :size="15" />Melhorar roteiro</button>
+            <button type="button" @click="sendStudioQuickAction('Criar temporada com episodios organizados a partir deste roteiro')"><ListChecks :size="15" />Planejar episodios</button>
+            <button type="button" @click="sendStudioQuickAction('Revisar continuidade de personagens, conflitos e tom visual')"><FileText :size="15" />Revisar continuidade</button>
+          </div>
+          <form class="studio-chat-input" @submit.prevent="sendChatMessage('studio_chat')">
+            <textarea v-model="chatInput" rows="2" placeholder="Peca ajustes antes de continuar para os episodios..." :disabled="chatLoading"></textarea>
+            <button type="submit" class="btn btn-primary btn-icon" :disabled="!chatInput.trim() || chatLoading"><ArrowUp :size="18" /></button>
+          </form>
         </section>
       </main>
 
-      <div v-if="!productionAnalysisGenerating && !productionAssetsReady && !episodeStageOpen" class="agent-status-bar" :class="{ 'episodes-ready': episodeOutlinesReady && !episodeScriptsGenerating }">
+      <div v-if="!productionAnalysisGenerating && !productionAssetsReady && !episodeStageOpen" class="agent-status-bar" :class="{ 'episodes-ready': episodeOutlinesReady && !episodeScriptsGenerating && !showScriptChatView, 'chat-mode': showScriptChatView }">
+        <template v-if="showScriptChatView">
+          <span class="agent-bot-dot"><WandSparkles :size="15" /></span>
+          <form class="agent-status-chat" @submit.prevent="sendChatMessage('studio_chat')">
+            <input v-model="chatInput" type="text" placeholder="Peca ajustes para a IA antes dos episodios..." :disabled="chatLoading" />
+            <button type="submit" aria-label="Enviar mensagem" :disabled="!chatInput.trim() || chatLoading">
+              <LoaderCircle v-if="chatLoading" :size="15" class="animate-spin" />
+              <ArrowUp v-else :size="16" />
+            </button>
+          </form>
+        </template>
+        <template v-else>
         <span class="agent-bot-dot"><WandSparkles :size="15" /></span>
         <strong>{{ agentStatusText }}</strong>
         <button v-if="scriptGenerating || episodeOutlineGenerating || episodeScriptsGenerating" type="button" @click="stopScriptGeneration">Stop</button>
@@ -1037,6 +1285,7 @@
           <button type="button" :disabled="pendingEpisodeCount === 0" @click="generateNextEpisodeScript"><Sparkles :size="12" /> Gerar 1 episódio</button>
         </template>
         <button v-else type="button" :disabled="creatingProject" @click="continueGeneratedScript">{{ creatingProject ? 'Criando...' : 'Continuar ?' }}</button>
+        </template>
       </div>
 
       <div v-if="productionAssetsReady" class="agent-status-bar production-assets-status">
@@ -1075,6 +1324,42 @@
               {{ language }}
             </button>
           </div>
+        </div>
+
+        <div v-if="currentProjectId" class="story-menu-wrap production-tools-bar">
+          <button class="round-control" type="button" aria-label="Mapa de producao" title="Dashboard" @click="loadProductionDashboard">
+            <ListChecks :size="18" />
+          </button>
+          <button v-if="visualBible" class="round-control" type="button" aria-label="Biblia visual" title="Bíblia Visual" @click="showVisualBible = true">
+            <BookOpen :size="18" />
+          </button>
+          <button v-if="designSheetData" class="round-control" type="button" aria-label="Design sheet" title="Design Sheet" @click="showDesignSheet = true">
+            <Palette :size="18" />
+          </button>
+          <button class="round-control" type="button" aria-label="Templates narrativos" title="Templates" @click="showNarrativeTemplates = true">
+            <FileText :size="18" />
+          </button>
+          <button v-if="storyboardParts.length" class="round-control" type="button" aria-label="Storyboard" title="Storyboard" @click="showStoryboardViewer = true">
+            <Image :size="18" />
+          </button>
+          <button class="round-control" type="button" aria-label="Fila de geracao" title="Fila" @click="loadGenerationQueue">
+            <Layers3 :size="18" />
+          </button>
+          <button class="round-control" type="button" aria-label="Comparacao A/B" title="Variantes" @click="loadABVariants">
+            <Scissors :size="18" />
+          </button>
+          <button v-if="improvementsList.length" class="round-control" type="button" aria-label="Sugestoes" title="Sugestões" @click="showImprovements = true">
+            <Sparkles :size="18" />
+          </button>
+          <button class="round-control" type="button" aria-label="Versoes" title="Historico" @click="loadVersionHistory">
+            <RotateCcw :size="18" />
+          </button>
+          <button class="round-control" type="button" aria-label="Chat cinematografico" title="Chat IA" @click="showCinematicChat = true">
+            <MessageCircle :size="18" />
+          </button>
+          <button class="round-control" type="button" aria-label="Exportar" title="Exportar" @click="showExportModal = true">
+            <Download :size="18" />
+          </button>
         </div>
 
         <div class="story-menu-wrap">
@@ -1210,103 +1495,43 @@
                   <header>
                     <div>
                       <strong>Configuração da produção</strong>
-                      <span>A skill recomenda partes e painéis depois de analisar a ideia.</span>
+                      <span class="cinematic-setup-sub">Defina a estrutura do seu projeto.</span>
                     </div>
-                    <span class="cinematic-engine-badge" :class="{ ready: cinematicEngineReady }">
-                      {{ cinematicEngineReady ? 'Skill ativa' : 'Skill local' }}
-                    </span>
                   </header>
 
                   <div class="cinematic-setup-grid">
                     <label>
                       <span>Temporadas</span>
-                      <input v-model.number="cinematicConfig.seasons" type="number" min="1" max="20" @change="syncCinematicEpisodeTotal" />
+                      <div class="episode-number-control">
+                        <input v-model.number="cinematicConfig.seasons" type="number" min="1" max="20" @change="syncCinematicEpisodeTotal" />
+                        <div class="episode-stepper">
+                          <button type="button" aria-label="Aumentar temporadas" :disabled="cinematicConfig.seasons >= 20" @click="cinematicConfig.seasons++; syncCinematicEpisodeTotal()"><ChevronUp :size="11" /></button>
+                          <button type="button" aria-label="Diminuir temporadas" :disabled="cinematicConfig.seasons <= 1" @click="cinematicConfig.seasons--; syncCinematicEpisodeTotal()"><ChevronDown :size="11" /></button>
+                        </div>
+                      </div>
                     </label>
                     <label>
-                      <span>Episódios por temporada</span>
-                      <input v-model.number="cinematicConfig.episodesPerSeason" type="number" min="1" max="999" @change="syncCinematicEpisodeTotal" />
-                    </label>
-                    <label>
-                      <span>Duração por episódio</span>
-                      <select v-model.number="cinematicConfig.durationSeconds">
-                        <option :value="60">1 minuto</option>
-                        <option :value="120">2 minutos</option>
-                        <option :value="180">3 minutos</option>
-                        <option :value="300">5 minutos</option>
-                        <option :value="600">10 minutos</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>Ritmo das cenas</span>
-                      <select v-model="cinematicConfig.pace">
-                        <option value="auto">IA recomenda</option>
-                        <option value="lento">Lento</option>
-                        <option value="medio">Médio</option>
-                        <option value="rapido">Rápido</option>
-                      </select>
+                      <span>Episódios / temporada</span>
+                      <div class="episode-number-control">
+                        <input v-model.number="cinematicConfig.episodesPerSeason" type="number" min="1" max="999" @change="syncCinematicEpisodeTotal" />
+                        <div class="episode-stepper">
+                          <button type="button" aria-label="Aumentar episódios" :disabled="cinematicConfig.episodesPerSeason >= 999" @click="cinematicConfig.episodesPerSeason++; syncCinematicEpisodeTotal()"><ChevronUp :size="11" /></button>
+                          <button type="button" aria-label="Diminuir episódios" :disabled="cinematicConfig.episodesPerSeason <= 1" @click="cinematicConfig.episodesPerSeason--; syncCinematicEpisodeTotal()"><ChevronDown :size="11" /></button>
+                        </div>
+                      </div>
                     </label>
                   </div>
 
-                  <div class="cinematic-total-row">
-                    <span>Total do projeto</span>
-                    <strong>{{ cinematicTotalEpisodes }} episódios</strong>
+                  <div class="cinematic-episodes-footer">
+                    <span class="cinematic-episodes-sub">Total do projeto</span>
+                    <span class="cinematic-episodes-badge">{{ cinematicTotalEpisodes }} episódios</span>
                   </div>
-
-                  <details class="cinematic-advanced">
-                    <summary>
-                      <span>Opções avançadas</span>
-                      <ChevronDown :size="14" />
-                    </summary>
-                    <div class="cinematic-advanced-grid">
-                      <label>
-                        <span>Director Mode</span>
-                        <select v-model="cinematicConfig.directorMode">
-                          <option value="auto">IA define</option>
-                          <option value="suspense psicologico">Suspense psicológico</option>
-                          <option value="novela dramatica">Novela dramática</option>
-                          <option value="sci-fi neon">Sci-fi neon</option>
-                          <option value="acao rapida">Ação rápida</option>
-                          <option value="romance emocional">Romance emocional</option>
-                          <option value="terror atmosferico">Terror atmosférico</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>Formato</span>
-                        <select v-model="cinematicConfig.formatPreset">
-                          <option value="serie vertical">Série vertical</option>
-                          <option value="cinematic wide">Cinematic wide</option>
-                          <option value="tiktok reels curto">TikTok / Reels</option>
-                          <option value="youtube episodio">YouTube episódio</option>
-                          <option value="trailer">Trailer</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>Idioma do roteiro</span>
-                        <select v-model="cinematicConfig.scriptLanguage">
-                          <option value="pt-BR">Português BR</option>
-                          <option value="en-US">English</option>
-                          <option value="es">Español</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>Idioma dos prompts</span>
-                        <select v-model="cinematicConfig.promptLanguage">
-                          <option value="English">English</option>
-                          <option value="pt-BR">Português BR</option>
-                        </select>
-                      </label>
-                    </div>
-                    <button class="avatar-zero-demo-link" type="button" @click="loadAvatarZeroDemo">
-                      <Sparkles :size="14" />
-                      Carregar demo Avatar.Zero
-                    </button>
-                  </details>
                 </div>
               </div>
 
-              <button class="generate-button" type="button" :disabled="!aiPrompt.trim() || creatingProject || cinematicPlanning" @click="createFromPrompt">
-                <LoaderCircle v-if="cinematicPlanning" :size="15" class="animate-spin" />
-                {{ cinematicPlanning ? 'Analisando...' : 'Analisar' }}
+              <button class="generate-button" type="button" :disabled="!aiPrompt.trim() || creatingProject" @click="createFromPrompt">
+                <LoaderCircle v-if="creatingProject" :size="15" class="animate-spin" />
+                {{ creatingProject ? 'Criando...' : 'Criar roteiro' }}
               </button>
             </div>
           </div>
@@ -1323,6 +1548,48 @@
             </button>
           </div>
         </div>
+
+        <section v-if="false" class="studio-chat-home composer-ai-chat" aria-label="Assistente de roteiro">
+          <div class="studio-chat-head">
+            <div>
+              <span>ASSISTENTE DE PRODUCAO</span>
+              <strong>{{ activeComposer === 'ai' ? 'Ajuda enquanto voce escreve' : 'Ajuda depois de carregar ou colar' }}</strong>
+            </div>
+            <button v-if="productionAssetsReady" class="soft-button" type="button" @click="openProductionCanvasOverview">
+              <PanelRightOpen :size="16" />
+              Canvas final
+            </button>
+          </div>
+          <div class="studio-chat-log" ref="chatMessagesRef">
+            <div v-if="!chatMessages.length" class="studio-chat-empty">
+              <Sparkles :size="30" />
+              <p>{{ activeComposer === 'ai' ? 'Escreva a ideia acima e clique em Criar roteiro, ou peca para a IA ajustar antes.' : 'Carregue ou cole o roteiro acima. Se preferir, descreva aqui o que quer transformar em roteiro.' }}</p>
+            </div>
+            <div v-for="(msg, idx) in chatMessages" :key="'home-chat-' + idx" :class="['chat-msg', `is-${msg.role}`]">
+              <div class="chat-msg-avatar">{{ msg.role === 'user' ? 'U' : 'IA' }}</div>
+              <div class="chat-msg-body">
+                <p>{{ msg.text }}</p>
+                <div v-if="msg.actions?.length" class="chat-actions">
+                  <button v-for="action in msg.actions" :key="action" type="button" class="btn btn-sm" @click="executeChatAction(action)">{{ chatActionLabel(action) }}</button>
+                </div>
+              </div>
+            </div>
+            <div v-if="chatLoading" class="chat-msg is-assistant">
+              <div class="chat-msg-avatar">IA</div>
+              <div class="chat-msg-body"><LoaderCircle :size="16" class="animate-spin" /></div>
+            </div>
+          </div>
+          <div class="studio-chat-actions">
+            <button class="primary" type="button" :disabled="creatingProject || scriptGenerating" @click="createScriptFromHomeChat"><FileText :size="15" />Criar roteiro</button>
+            <button type="button" @click="sendStudioQuickAction('Criar temporada com episodios organizados')"><ListChecks :size="15" />Criar temporada</button>
+            <button type="button" @click="sendStudioQuickAction('Montar storyboard com partes e paineis')"><Clapperboard :size="15" />Montar storyboard</button>
+            <button type="button" @click="sendStudioQuickAction('Revisar prompts finais e continuidade visual')"><Sparkles :size="15" />Revisar prompts</button>
+          </div>
+          <form class="studio-chat-input" @submit.prevent="sendChatMessage('studio_chat')">
+            <textarea v-model="chatInput" rows="2" placeholder="Peça um ajuste, ou descreva a ideia se ainda nao escreveu acima..." :disabled="chatLoading"></textarea>
+            <button type="submit" class="btn btn-primary btn-icon" :disabled="!chatInput.trim() || chatLoading"><ArrowUp :size="18" /></button>
+          </form>
+        </section>
 
         <div class="composer-note">
           <span><Info :size="16" /> Garanta que você possui o direito autoral</span>
@@ -1862,6 +2129,617 @@
         </div>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showProductionDashboard" class="pippit-overlay production-dashboard-overlay" @click.self="showProductionDashboard = false">
+        <section class="production-dashboard-modal" role="dialog" aria-modal="true" aria-labelledby="prod-dash-title">
+          <header class="modal-head">
+            <div>
+              <div class="modal-kicker">MAPA DE PRODUÇÃO</div>
+              <h2 id="prod-dash-title">Dashboard de Produção</h2>
+              <p class="modal-sub">Acompanhe o progresso de todas as etapas do projeto.</p>
+            </div>
+            <button type="button" class="modal-close" aria-label="Fechar" @click="showProductionDashboard = false"><X :size="20" /></button>
+          </header>
+          <div class="prod-dash-stages">
+            <div v-for="(stage, idx) in productionDashboardStages" :key="stage.key" class="prod-dash-stage" :class="`is-${stage.status}`">
+              <div class="prod-dash-stage-num">{{ idx + 1 }}</div>
+              <div class="prod-dash-stage-info">
+                <strong>{{ stage.label }}</strong>
+                <span>{{ stage.description }}</span>
+              </div>
+              <span :class="['prod-dash-pill', `is-${stage.status}`]">
+                {{ stage.status === 'complete' ? 'Concluído' : stage.status === 'in_progress' ? 'Em andamento' : stage.status === 'needs_review' ? 'Revisão' : 'Pendente' }}
+              </span>
+              <button v-if="stage.status === 'complete' || stage.status === 'in_progress'" type="button" class="btn btn-sm btn-ghost" @click="approveStage(stage.key)">
+                <Check :size="13" /> Aprovar
+              </button>
+            </div>
+          </div>
+          <div class="prod-dash-estimate" v-if="cinematicEstimate.total_parts > 0">
+            <div><strong>{{ cinematicEstimate.total_parts }}</strong><span>partes</span></div>
+            <div><strong>{{ cinematicEstimate.total_panels }}</strong><span>painéis</span></div>
+            <div><strong>{{ cinematicEstimate.image_prompts }}</strong><span>prompts imagem</span></div>
+            <div><strong>{{ cinematicEstimate.video_prompts }}</strong><span>prompts vídeo</span></div>
+            <div><strong>{{ cinematicEstimate.review_load }}</strong><span>carga revisão</span></div>
+          </div>
+          <footer class="modal-footer">
+            <button type="button" class="btn btn-ghost" @click="showProductionDashboard = false">Fechar</button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showExportModal" class="pippit-overlay export-overlay" @click.self="showExportModal = false">
+        <section class="export-modal" role="dialog" aria-modal="true" aria-labelledby="export-title">
+          <header class="modal-head">
+            <div>
+              <div class="modal-kicker">EXPORTAR PROJETO</div>
+              <h2 id="export-title">Exportar roteiro e prompts</h2>
+              <p class="modal-sub">Escolha o formato para baixar o conteúdo gerado.</p>
+            </div>
+            <button type="button" class="modal-close" aria-label="Fechar" @click="showExportModal = false"><X :size="20" /></button>
+          </header>
+          <div class="export-options">
+            <button type="button" class="export-option" :class="{ active: exportFormat === 'markdown' }" @click="exportFormat = 'markdown'">
+              <FileText :size="24" />
+              <strong>Markdown</strong>
+              <span>Formato legível, ideal para revisão</span>
+            </button>
+            <button type="button" class="export-option" :class="{ active: exportFormat === 'json' }" @click="exportFormat = 'json'">
+              <Layers3 :size="24" />
+              <strong>JSON</strong>
+              <span>Dados estruturados para integração</span>
+            </button>
+            <button type="button" class="export-option" :class="{ active: exportFormat === 'pdf' }" @click="exportFormat = 'pdf'">
+              <CreditCard :size="24" />
+              <strong>PDF</strong>
+              <span>Documento formatado para impressão</span>
+            </button>
+          </div>
+          <div v-if="exportLoading" class="export-loading">
+            <LoaderCircle :size="20" class="animate-spin" />
+            <span>Gerando exportação...</span>
+          </div>
+          <div v-if="exportPreview" class="export-preview">
+            <div class="export-preview-header">
+              <span>Pré-visualização</span>
+              <button type="button" class="btn btn-sm" @click="copyExportContent">
+                <Copy :size="13" /> Copiar
+              </button>
+            </div>
+            <pre class="export-preview-content">{{ exportPreview }}</pre>
+          </div>
+          <footer class="modal-footer">
+            <button type="button" class="btn btn-ghost" @click="showExportModal = false">Cancelar</button>
+            <button type="button" class="btn btn-primary" :disabled="exportLoading || !exportPreview" @click="downloadExport">
+              <Upload :size="14" /> Baixar {{ exportFormat.toUpperCase() }}
+            </button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showCinematicChat" class="pippit-overlay cinematic-chat-overlay" @click.self="showCinematicChat = false">
+        <section class="cinematic-chat-modal" role="dialog" aria-modal="true" aria-labelledby="chat-title">
+          <header class="modal-head modal-head-row">
+            <div>
+              <div class="modal-kicker">ASSISTENTE CINEMATOGRÁFICO</div>
+              <h2 id="chat-title">Chat de Produção</h2>
+            </div>
+            <button type="button" class="modal-close" aria-label="Fechar" @click="showCinematicChat = false"><X :size="20" /></button>
+          </header>
+          <div class="chat-messages" ref="chatMessagesRef">
+            <div v-if="!chatMessages.length" class="chat-empty">
+              <Sparkles :size="32" />
+              <p>Pergunte sobre roteiro, prompts, storyboard ou produção cinematográfica.</p>
+            </div>
+            <div v-for="(msg, idx) in chatMessages" :key="idx" :class="['chat-msg', `is-${msg.role}`]">
+              <div class="chat-msg-avatar">{{ msg.role === 'user' ? 'U' : 'IA' }}</div>
+              <div class="chat-msg-body">
+                <p>{{ msg.text }}</p>
+                <div v-if="msg.actions?.length" class="chat-actions">
+                  <button v-for="action in msg.actions" :key="action" type="button" class="btn btn-sm" @click="executeChatAction(action)">{{ action }}</button>
+                </div>
+              </div>
+            </div>
+            <div v-if="chatLoading" class="chat-msg is-assistant">
+              <div class="chat-msg-avatar">IA</div>
+              <div class="chat-msg-body"><LoaderCircle :size="16" class="animate-spin" /></div>
+            </div>
+          </div>
+          <form class="chat-input" @submit.prevent="sendChatMessage('studio_chat')">
+            <input v-model="chatInput" class="input" placeholder="Digite sua pergunta..." :disabled="chatLoading" />
+            <button type="submit" class="btn btn-primary btn-icon" :disabled="!chatInput.trim() || chatLoading"><Sparkles :size="16" /></button>
+          </form>
+        </section>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showGenerationQueue" class="pippit-overlay generation-queue-overlay" @click.self="showGenerationQueue = false">
+        <section class="generation-queue-modal" role="dialog" aria-modal="true" aria-labelledby="queue-title">
+          <header class="modal-head">
+            <div>
+              <div class="modal-kicker">FILA DE GERAÇÃO</div>
+              <h2 id="queue-title">Progresso da geração</h2>
+              <p class="modal-sub">Status de cada etapa de geração do projeto.</p>
+            </div>
+            <button type="button" class="modal-close" aria-label="Fechar" @click="showGenerationQueue = false"><X :size="20" /></button>
+          </header>
+          <div class="queue-list">
+            <div v-if="!generationQueue.length" class="queue-empty">
+              <Info :size="24" />
+              <span>Nenhuma tarefa na fila.</span>
+            </div>
+            <div v-for="(item, idx) in generationQueue" :key="idx" class="queue-item" :class="`is-${item.status}`">
+              <div class="queue-item-icon">
+                <LoaderCircle v-if="item.status === 'generating'" :size="16" class="animate-spin" />
+                <Check v-else-if="item.status === 'completed'" :size="16" />
+                <X v-else-if="item.status === 'failed'" :size="16" />
+                <span v-else class="queue-pending-dot"></span>
+              </div>
+              <div class="queue-item-info">
+                <strong>{{ item.label }}</strong>
+                <span>{{ item.description || item.status }}</span>
+              </div>
+              <span :class="['prod-dash-pill', `is-${item.status === 'completed' ? 'complete' : item.status === 'generating' ? 'in_progress' : item.status === 'failed' ? 'blocked' : 'pending'}`]">
+                {{ item.status === 'completed' ? 'Concluído' : item.status === 'generating' ? 'Gerando...' : item.status === 'failed' ? 'Falhou' : 'Aguardando' }}
+              </span>
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <button type="button" class="btn btn-ghost" @click="showGenerationQueue = false">Fechar</button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showABComparison" class="pippit-overlay ab-comparison-overlay" @click.self="showABComparison = false">
+        <section class="ab-comparison-modal" role="dialog" aria-modal="true" aria-labelledby="ab-title">
+          <header class="modal-head">
+            <div>
+              <div class="modal-kicker">COMPARAÇÃO A/B</div>
+              <h2 id="ab-title">Variantes de prompt</h2>
+              <p class="modal-sub">Compare diferentes estilos para o mesmo painel.</p>
+            </div>
+            <button type="button" class="modal-close" aria-label="Fechar" @click="showABComparison = false"><X :size="20" /></button>
+          </header>
+          <div v-if="abVariantsLoading" class="ab-loading">
+            <LoaderCircle :size="20" class="animate-spin" />
+            <span>Gerando variantes...</span>
+          </div>
+          <div v-else-if="abVariants.length" class="ab-grid">
+            <div v-for="variant in abVariants" :key="variant.mode" class="ab-card" :class="{ selected: abSelectedMode === variant.mode }" @click="abSelectedMode = variant.mode">
+              <div class="ab-card-head">
+                <strong>{{ variant.label }}</strong>
+                <span class="tag tag-accent">{{ variant.mode }}</span>
+              </div>
+              <p class="ab-card-prompt">{{ variant.prompt }}</p>
+              <div class="ab-card-metrics">
+                <span><strong>{{ variant.quality?.score || 0 }}%</strong> qualidade</span>
+                <span><strong>{{ variant.quality?.visual_clarity || 0 }}</strong> clareza</span>
+                <span><strong>{{ variant.quality?.generation_risk || 0 }}%</strong> risco</span>
+              </div>
+              <button type="button" class="btn btn-sm" @click.stop="copyABPrompt(variant.prompt)">Copiar prompt</button>
+            </div>
+          </div>
+          <div v-else class="ab-empty">
+            <Info :size="24" />
+            <span>Nenhuma variante gerada. Clique em "Gerar variantes" primeiro.</span>
+          </div>
+          <footer class="modal-footer">
+            <button type="button" class="btn btn-ghost" @click="showABComparison = false">Fechar</button>
+            <button type="button" class="btn btn-primary" :disabled="abVariantsLoading || !abSelectedMode" @click="applyABVariant">
+              Aplicar variante selecionada
+            </button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showVersionHistory" class="pippit-overlay version-history-overlay" @click.self="showVersionHistory = false">
+        <section class="version-history-modal" role="dialog" aria-modal="true" aria-labelledby="version-title">
+          <header class="modal-head">
+            <div>
+              <div class="modal-kicker">HISTÓRICO DE VERSÕES</div>
+              <h2 id="version-title">Versões anteriores</h2>
+              <p class="modal-sub">Visualize e restaure versões anteriores do projeto.</p>
+            </div>
+            <button type="button" class="modal-close" aria-label="Fechar" @click="showVersionHistory = false"><X :size="20" /></button>
+          </header>
+          <div class="version-list">
+            <div v-if="!versionHistory.length" class="version-empty">
+              <Info :size="24" />
+              <span>Nenhuma versão salva ainda.</span>
+            </div>
+            <div v-for="(entry, idx) in versionHistory" :key="idx" class="version-item" :class="{ current: idx === 0 }">
+              <div class="version-item-dot" :class="{ current: idx === 0 }"></div>
+              <div class="version-item-info">
+                <strong>{{ entry.stage || 'Estado' }} — v{{ versionHistory.length - idx }}</strong>
+                <span>{{ formatVersionDate(entry.at) }}</span>
+                <p v-if="entry.notes" class="dim">{{ entry.notes }}</p>
+              </div>
+              <button v-if="idx > 0" type="button" class="btn btn-sm btn-ghost" @click="restoreVersion(entry)">Restaurar</button>
+              <span v-else class="tag tag-success">Atual</span>
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <button type="button" class="btn btn-ghost" @click="showVersionHistory = false">Fechar</button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showStoryboardViewer" class="pippit-overlay storyboard-viewer-overlay" @click.self="showStoryboardViewer = false">
+        <section class="storyboard-viewer-modal" role="dialog" aria-modal="true" aria-labelledby="sb-title">
+          <header class="modal-head">
+            <div>
+              <div class="modal-kicker">STORYBOARD</div>
+              <h2 id="sb-title">Parts e Painéis</h2>
+              <p class="modal-sub">{{ storyboardParts.length }} partes · {{ storyboardTotalPanels }} painéis no total</p>
+            </div>
+            <button type="button" class="modal-close" aria-label="Fechar" @click="showStoryboardViewer = false"><X :size="20" /></button>
+          </header>
+          <div v-if="!storyboardParts.length" class="sb-empty">
+            <Image :size="32" />
+            <p>Gere o storyboard na etapa anterior para visualizar partes e painéis.</p>
+          </div>
+          <div v-else class="sb-content">
+            <nav class="sb-parts-nav">
+              <button v-for="part in storyboardParts" :key="part.part_number" type="button" class="sb-part-tab" :class="{ active: sbActivePart === part.part_number }" @click="sbActivePart = part.part_number">
+                <span class="sb-part-num">{{ part.part_number }}</span>
+                <span class="sb-part-label">{{ part.title || 'Parte ' + part.part_number }}</span>
+              </button>
+            </nav>
+            <div class="sb-part-detail" v-if="activeStoryboardPart">
+              <div class="sb-part-meta">
+                <span><strong>{{ activeStoryboardPart.duration_target_seconds || '?' }}s</strong> duração</span>
+                <span class="tag">{{ activeStoryboardPart.rhythm || 'medio' }}</span>
+                <span class="tag tag-accent">{{ activeStoryboardPart.layout || 'grid' }}</span>
+                <span>{{ activeStoryboardPart.panels?.length || 0 }} painéis</span>
+              </div>
+              <p v-if="activeStoryboardPart.summary" class="sb-part-summary">{{ activeStoryboardPart.summary }}</p>
+              <div class="sb-panels-grid">
+                <article v-for="panel in activeStoryboardPart.panels" :key="panel.panel_number" class="sb-panel-card" :class="{ selected: sbSelectedPanel?.panel_number === panel.panel_number }" @click="sbSelectedPanel = panel">
+                  <div class="sb-panel-header">
+                    <span class="sb-panel-num">#{{ panel.panel_number }}</span>
+                    <span v-if="panel.timecode" class="sb-panel-timecode mono">{{ formatTimecode(panel.timecode) }}</span>
+                  </div>
+                  <div v-if="panel.caption" class="sb-panel-caption">{{ panel.caption }}</div>
+                  <div class="sb-panel-prompts">
+                    <details v-if="panel.image_prompt">
+                      <summary>Image prompt</summary>
+                      <p>{{ panel.image_prompt }}</p>
+                    </details>
+                    <details v-if="panel.video_prompt">
+                      <summary>Video prompt</summary>
+                      <p>{{ panel.video_prompt }}</p>
+                    </details>
+                  </div>
+                  <div v-if="panel.quality" class="sb-panel-quality">
+                    <span :class="['tag', panel.quality.score >= 70 ? 'tag-success' : panel.quality.score >= 40 ? 'tag-warning' : 'tag-error']">{{ panel.quality.score }}%</span>
+                  </div>
+                  <div class="sb-panel-actions">
+                    <button type="button" class="btn btn-sm" @click.stop="openPanelRefinement(panel)">Refinar</button>
+                    <button type="button" class="btn btn-sm btn-ghost" @click.stop="copyPanelPrompt(panel)">Copiar</button>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <button type="button" class="btn btn-ghost" @click="showStoryboardViewer = false">Fechar</button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showPanelRefinement" class="pippit-overlay panel-refinement-overlay" @click.self="showPanelRefinement = false">
+        <section class="panel-refinement-modal" role="dialog" aria-modal="true" aria-labelledby="refine-title">
+          <header class="modal-head">
+            <div>
+              <div class="modal-kicker">REFINAMENTO DE PAINEL</div>
+              <h2 id="refine-title">Painel #{{ refinementPanel?.panel_number || '?' }}</h2>
+              <p class="modal-sub">Refine prompt, escolha variante ou adaptador de modelo.</p>
+            </div>
+            <button type="button" class="modal-close" aria-label="Fechar" @click="showPanelRefinement = false"><X :size="20" /></button>
+          </header>
+          <div class="refine-body" v-if="refinementPanel">
+            <label class="field">
+              <span class="field-label">Instrução de refinamento</span>
+              <textarea v-model="refinementInstruction" class="input" rows="3" placeholder="Ex: aumentar tensão dramática, iluminação mais escura, closer no rosto..."></textarea>
+            </label>
+            <div class="refine-row">
+              <label class="field flex-1">
+                <span class="field-label">Modo de variante</span>
+                <select v-model="refinementVariantMode" class="input">
+                  <option value="">Nenhum</option>
+                  <option value="emotional">Mais emocional</option>
+                  <option value="action">Mais ação</option>
+                  <option value="cinematic">Mais cinematográfico</option>
+                  <option value="slow">Mais lento</option>
+                  <option value="intense">Mais intenso</option>
+                </select>
+              </label>
+              <label class="field flex-1">
+                <span class="field-label">Modelo alvo</span>
+                <select v-model="refinementTargetModel" class="input">
+                  <option value="">Todos (padrão)</option>
+                  <option value="flux">Flux</option>
+                  <option value="midjourney">Midjourney</option>
+                  <option value="runway">Runway</option>
+                  <option value="kling">Kling</option>
+                  <option value="veo">Veo</option>
+                  <option value="sora">Sora</option>
+                  <option value="wan">Wan</option>
+                </select>
+              </label>
+            </div>
+            <div v-if="refinementLoading" class="refine-loading">
+              <LoaderCircle :size="18" class="animate-spin" /> Refinando...
+            </div>
+            <div v-if="refinementResult" class="refine-result">
+              <div class="refine-result-header">
+                <span :class="['tag', refinementResult.quality?.score >= 70 ? 'tag-success' : refinementResult.quality?.score >= 40 ? 'tag-warning' : 'tag-error']">
+                  {{ refinementResult.quality?.score || 0 }}% qualidade
+                </span>
+                <button type="button" class="btn btn-sm" @click="copyRefinedPrompt">
+                  <Copy :size="13" /> Copiar prompt refinado
+                </button>
+              </div>
+              <label class="field">
+                <span class="field-label">Image Prompt refinado</span>
+                <textarea class="input" rows="4" :value="refinementResult.image_prompt" readonly></textarea>
+              </label>
+              <label class="field">
+                <span class="field-label">Negative Prompt</span>
+                <textarea class="input" rows="2" :value="refinementResult.negative_prompt" readonly></textarea>
+              </label>
+              <details v-if="refinementResult.model_adapters?.length" class="refine-adapters">
+                <summary>Adaptadores de modelo ({{ refinementResult.model_adapters.length }})</summary>
+                <div v-for="adapter in refinementResult.model_adapters" :key="adapter.model" class="refine-adapter">
+                  <strong>{{ adapter.model }}</strong>
+                  <p>{{ adapter.prompt }}</p>
+                  <span v-if="adapter.note" class="dim">{{ adapter.note }}</span>
+                </div>
+              </details>
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <button type="button" class="btn btn-ghost" @click="showPanelRefinement = false">Cancelar</button>
+            <button type="button" class="btn btn-primary" :disabled="refinementLoading || !refinementInstruction.trim()" @click="executePanelRefinement">
+              <LoaderCircle v-if="refinementLoading" :size="14" class="animate-spin" />
+              Refinar painel
+            </button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showVisualBible" class="pippit-overlay visual-bible-overlay" @click.self="showVisualBible = false">
+        <section class="visual-bible-modal" role="dialog" aria-modal="true" aria-labelledby="vb-title">
+          <header class="modal-head">
+            <div>
+              <div class="modal-kicker">BÍBLIA VISUAL</div>
+              <h2 id="vb-title">Referência visual do drama</h2>
+              <p class="modal-sub">Fonte única de verdade para aparência, locais e continuidade.</p>
+            </div>
+            <button type="button" class="modal-close" aria-label="Fechar" @click="showVisualBible = false"><X :size="20" /></button>
+          </header>
+          <div v-if="!visualBible" class="vb-empty">
+            <BookOpen :size="32" />
+            <p>Gere o plano cinematográfico primeiro para criar a bíblia visual.</p>
+          </div>
+          <div v-else class="vb-body">
+            <div v-if="visualBible.logline" class="vb-section">
+              <div class="vb-section-kicker">LOGLINE</div>
+              <p>{{ visualBible.logline }}</p>
+            </div>
+            <div v-if="visualBible.characters?.length" class="vb-section">
+              <div class="vb-section-kicker">PERSONAGENS ({{ visualBible.characters.length }})</div>
+              <div class="vb-characters-grid">
+                <div v-for="char in visualBible.characters" :key="char.name" class="vb-character-card">
+                  <strong>{{ char.name }}</strong>
+                  <span v-if="char.role" class="tag tag-accent">{{ char.role }}</span>
+                  <p v-if="char.appearance_lock">{{ char.appearance_lock }}</p>
+                  <p v-if="char.costume_lock" class="dim">{{ char.costume_lock }}</p>
+                </div>
+              </div>
+            </div>
+            <div v-if="visualBible.locations?.length" class="vb-section">
+              <div class="vb-section-kicker">LOCAIS ({{ visualBible.locations.length }})</div>
+              <div class="vb-tags">
+                <span v-for="loc in visualBible.locations" :key="loc.name || loc" class="tag">{{ loc.name || loc }}</span>
+              </div>
+            </div>
+            <div v-if="visualBible.objects?.length" class="vb-section">
+              <div class="vb-section-kicker">OBJETOS ({{ visualBible.objects.length }})</div>
+              <div class="vb-tags">
+                <span v-for="obj in visualBible.objects" :key="obj.name || obj" class="tag">{{ obj.name || obj }}</span>
+              </div>
+            </div>
+            <div v-if="visualBible.color_palette?.length" class="vb-section">
+              <div class="vb-section-kicker">PALETA DE CORES</div>
+              <div class="vb-palette">
+                <span v-for="(color, idx) in visualBible.color_palette" :key="idx" class="vb-color-swatch" :style="{ background: color.hex || color }" :title="color.name || color"></span>
+              </div>
+            </div>
+            <div v-if="visualBible.camera_style" class="vb-section">
+              <div class="vb-section-kicker">ESTILO DE CÂMERA</div>
+              <p>{{ visualBible.camera_style }}</p>
+            </div>
+            <div v-if="visualBible.continuity_rules?.length" class="vb-section">
+              <div class="vb-section-kicker">REGRAS DE CONTINUIDADE</div>
+              <ul class="vb-rules">
+                <li v-for="(rule, idx) in visualBible.continuity_rules" :key="idx">{{ rule }}</li>
+              </ul>
+            </div>
+            <div v-if="visualBible.glossary?.length" class="vb-section">
+              <div class="vb-section-kicker">GLOSSÁRIO</div>
+              <div class="vb-tags">
+                <span v-for="term in visualBible.glossary" :key="term.name || term" class="tag">{{ term.name || term }}</span>
+              </div>
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <button type="button" class="btn btn-ghost" @click="showVisualBible = false">Fechar</button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showDesignSheet" class="pippit-overlay design-sheet-overlay" @click.self="showDesignSheet = false">
+        <section class="design-sheet-modal" role="dialog" aria-modal="true" aria-labelledby="ds-title">
+          <header class="modal-head">
+            <div>
+              <div class="modal-kicker">DESIGN SHEET</div>
+              <h2 id="ds-title">Ficha de conceito visual</h2>
+              <p class="modal-sub">Prompt e configuração para geração do design concept.</p>
+            </div>
+            <button type="button" class="modal-close" aria-label="Fechar" @click="showDesignSheet = false"><X :size="20" /></button>
+          </header>
+          <div v-if="!designSheetData" class="ds-empty">
+            <Palette :size="32" />
+            <p>Gere o design sheet na etapa de produção.</p>
+          </div>
+          <div v-else class="ds-body">
+            <div v-if="designSheetData.prompt" class="ds-section">
+              <div class="vb-section-kicker">PROMPT</div>
+              <pre class="ds-prompt">{{ designSheetData.prompt }}</pre>
+              <button type="button" class="btn btn-sm" @click="copyDesignSheetPrompt"><Copy :size="13" /> Copiar prompt</button>
+            </div>
+            <div v-if="designSheetData.negative_prompt" class="ds-section">
+              <div class="vb-section-kicker">NEGATIVE PROMPT</div>
+              <pre class="ds-prompt">{{ designSheetData.negative_prompt }}</pre>
+            </div>
+            <div v-if="designSheetData.model_adapters?.length" class="ds-section">
+              <div class="vb-section-kicker">ADAPTADORES POR MODELO</div>
+              <div class="ds-adapters">
+                <div v-for="adapter in designSheetData.model_adapters" :key="adapter.model" class="ds-adapter-card">
+                  <strong>{{ adapter.model }}</strong>
+                  <p>{{ adapter.prompt }}</p>
+                  <span v-if="adapter.note" class="dim">{{ adapter.note }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-if="designSheetData.validation" class="ds-section">
+              <div class="vb-section-kicker">VALIDAÇÃO</div>
+              <span :class="['tag', designSheetData.validation.passed ? 'tag-success' : 'tag-error']">
+                {{ designSheetData.validation.passed ? 'Aprovado' : 'Atenção' }}
+              </span>
+              <ul v-if="designSheetData.validation.issues?.length" class="vb-rules">
+                <li v-for="(issue, idx) in designSheetData.validation.issues" :key="idx">{{ issue.message }}</li>
+              </ul>
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <button type="button" class="btn btn-ghost" @click="showDesignSheet = false">Fechar</button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showNarrativeTemplates" class="pippit-overlay narrative-templates-overlay" @click.self="showNarrativeTemplates = false">
+        <section class="narrative-templates-modal" role="dialog" aria-modal="true" aria-labelledby="nt-title">
+          <header class="modal-head">
+            <div>
+              <div class="modal-kicker">TEMPLATE NARRATIVO</div>
+              <h2 id="nt-title">Escolha o estilo da narrativa</h2>
+              <p class="modal-sub">O template influencia câmera, ritmo, iluminação e quantidade de painéis.</p>
+            </div>
+            <button type="button" class="modal-close" aria-label="Fechar" @click="showNarrativeTemplates = false"><X :size="20" /></button>
+          </header>
+          <div class="nt-grid">
+            <button v-for="tmpl in narrativeTemplates" :key="tmpl.id" type="button" class="nt-card" :class="{ selected: selectedNarrativeTemplate === tmpl.id }" @click="selectNarrativeTemplate(tmpl.id)">
+              <div class="nt-card-icon"><component :is="tmpl.icon" :size="28" /></div>
+              <strong>{{ tmpl.label }}</strong>
+              <span>{{ tmpl.description }}</span>
+            </button>
+          </div>
+          <div v-if="selectedNarrativeTemplate" class="nt-preview">
+            <div class="vb-section-kicker">PREVIEW DO ESTILO</div>
+            <p>{{ selectedNarrativeTemplateData?.description }}</p>
+            <div class="nt-details">
+              <span><strong>Câmera:</strong> {{ selectedNarrativeTemplateData?.camera }}</span>
+              <span><strong>Ritmo:</strong> {{ selectedNarrativeTemplateData?.rhythm }}</span>
+              <span><strong>Iluminação:</strong> {{ selectedNarrativeTemplateData?.lighting }}</span>
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <button type="button" class="btn btn-ghost" @click="showNarrativeTemplates = false">Cancelar</button>
+            <button type="button" class="btn btn-primary" :disabled="!selectedNarrativeTemplate" @click="applyNarrativeTemplate">
+              Aplicar template
+            </button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showImprovements" class="pippit-overlay improvements-overlay" @click.self="showImprovements = false">
+        <section class="improvements-modal" role="dialog" aria-modal="true" aria-labelledby="imp-title">
+          <header class="modal-head">
+            <div>
+              <div class="modal-kicker">SUGESTÕES DE MELHORIA</div>
+              <h2 id="imp-title">Recomendações da IA</h2>
+              <p class="modal-sub">Sugestões para melhorar qualidade e consistência do projeto.</p>
+            </div>
+            <button type="button" class="modal-close" aria-label="Fechar" @click="showImprovements = false"><X :size="20" /></button>
+          </header>
+          <div v-if="!improvementsList.length" class="imp-empty">
+            <Sparkles :size="32" />
+            <p>Nenhuma sugestão no momento.</p>
+          </div>
+          <div v-else class="imp-list">
+            <div v-for="(item, idx) in improvementsList" :key="idx" class="imp-card">
+              <div class="imp-card-head">
+                <span :class="['tag', item.priority === 'high' ? 'tag-error' : item.priority === 'medium' ? 'tag-warning' : 'tag-info']">
+                  {{ item.priority || 'info' }}
+                </span>
+                <strong>{{ item.title }}</strong>
+              </div>
+              <p>{{ item.reason || item.description }}</p>
+              <span v-if="item.action" class="dim">{{ item.action }}</span>
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <button type="button" class="btn btn-ghost" @click="showImprovements = false">Fechar</button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="expandedScriptPrompt" class="pippit-overlay script-prompt-overlay" @click.self="closeExpandedScriptPrompt">
+        <section class="script-prompt-modal" role="dialog" aria-modal="true" aria-labelledby="script-prompt-modal-title">
+          <header class="modal-head">
+            <div>
+              <div class="modal-kicker">ARTEFATO DO ROTEIRO</div>
+              <h2 id="script-prompt-modal-title">{{ expandedScriptPrompt.title }}</h2>
+              <p class="modal-sub">Revise, copie ou envie este bloco para a IA editar.</p>
+            </div>
+            <button type="button" class="modal-close" aria-label="Fechar" @click="closeExpandedScriptPrompt"><X :size="20" /></button>
+          </header>
+          <div class="script-prompt-modal-body">
+            <p>{{ expandedScriptPrompt.body }}</p>
+          </div>
+          <footer class="modal-footer">
+            <button type="button" class="btn btn-ghost" @click="copyScriptPromptCard(expandedScriptPrompt)"><Copy :size="15" />Copiar</button>
+            <button type="button" class="btn btn-primary" @click="closeExpandedScriptPrompt"><FileText :size="15" />Voltar ao card</button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -1876,13 +2754,18 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  Clapperboard,
   CircleUserRound,
+  Copy,
   CreditCard,
+  Download,
+  Eye,
   ExternalLink,
   FileText,
   Folder,
   Globe2,
   Grid3X3,
+  Heart,
   HelpCircle,
   Image,
   Info,
@@ -1892,10 +2775,13 @@ import {
   LogOut,
   ListChecks,
   MapPin,
+  MessageCircle,
   MoreHorizontal,
   Maximize2,
   Music,
   Palette,
+  PanelRightOpen,
+  Pencil,
   Plus,
   RotateCcw,
   Scan,
@@ -1912,6 +2798,7 @@ import {
   Video,
   WandSparkles,
   X,
+  Zap,
 } from 'lucide-vue-next'
 import brandLogo from '~/assets/huobao-logo.png'
 import { aiConfigAPI, dramaAPI, imageAPI, storyStudioAPI, uploadAPI } from '~/composables/useApi'
@@ -1934,7 +2821,7 @@ const productionCanvasOpen = ref(false)
 const episodeStageOpen = ref(false)
 const generatedScriptReady = ref(false)
 const deletingProjects = ref(false)
-const activeComposer = ref('upload')
+const activeComposer = ref('ai')
 const showPaste = ref(false)
 const showAccountMenu = ref(false)
 const showLibraryCreateMenu = ref(false)
@@ -1943,6 +2830,11 @@ const showHelp = ref(false)
 const showDeleteConfirm = ref(false)
 const showProductionContinueConfirm = ref(false)
 const showScriptContinueConfirm = ref(false)
+const expandedScriptPrompt = ref(null)
+const editingScriptPromptKey = ref('')
+const editingScriptPromptText = ref('')
+const scriptPromptAiRequests = ref({})
+const activeScriptPromptRequestKey = ref('')
 const openControl = ref(null)
 const styleLibraryOpen = ref(false)
 const styleSearchOpen = ref(false)
@@ -2119,6 +3011,7 @@ const scriptDraft = ref({
   idea: '',
   title: 'AI Generated Script',
   episodes: 10,
+  seasons: 1,
   ratio: 'Default ratio',
   styleLabel: 'Automático',
   storyType: 'Drama serial adaptado por IA',
@@ -2240,7 +3133,7 @@ const cinematicTotalEpisodes = computed(() => {
   return Math.min(999, seasons * episodesPerSeason)
 })
 const productionProfileLabel = computed(() =>
-  `${cinematicConfig.seasons}T · ${cinematicTotalEpisodes.value} ep. · ${formatCinematicDuration(cinematicConfig.durationSeconds)}`,
+  `${cinematicConfig.seasons}T · ${cinematicTotalEpisodes.value} ep.`,
 )
 const cinematicEngineReady = computed(() => Boolean(cinematicEngine.value?.skill?.available))
 const cinematicPartConfidence = computed(() => Math.round(Number(cinematicPlan.value?.recommendations?.parts?.confidence) || 84))
@@ -2301,6 +3194,121 @@ const selectedLanguageCode = computed(() => selectedLanguage.value === 'English'
 const agentRatioLabel = computed(() => scriptFlowActive.value ? scriptDraft.value.ratio : selectedRatio.value)
 const agentRatioDisplay = computed(() => agentRatioLabel.value === 'Default ratio' ? '9:16' : agentRatioLabel.value)
 const summaryLocked = computed(() => episodeOutlineGenerating.value || episodeOutlinesReady.value || episodeScriptsGenerating.value)
+const showScriptChatView = computed(() =>
+  (scriptGenerating.value || generatedScriptReady.value || episodeOutlineGenerating.value || episodeOutlinesReady.value)
+  && !productionAssetsReady.value
+  && !episodeStageOpen.value,
+)
+const scriptGenerationSteps = computed(() => [
+  { key: 'project', label: 'Criar projeto', status: currentProjectId.value ? 'done' : scriptGenerating.value ? 'running' : 'pending' },
+  { key: 'idea', label: 'Ler ideia original', status: scriptDraft.value.idea ? 'done' : 'pending' },
+  { key: 'summary', label: 'Gerar resumo do roteiro', status: generatedScriptReady.value || episodeOutlineGenerating.value ? 'done' : scriptGenerating.value ? 'running' : 'pending' },
+  { key: 'review', label: 'Aguardar perguntas e ajustes', status: generatedScriptReady.value || episodeOutlineGenerating.value ? 'running' : 'pending' },
+])
+const scriptArtifactCards = computed(() => {
+  const draft = scriptDraft.value
+  return [
+    {
+      key: 'structure',
+      label: 'Estrutura',
+      title: `${Number(draft.seasons) || 1} temporada(s) · ${Number(draft.episodes) || 1} ep./temporada`,
+      body: `Formato ${draft.ratio === 'Default ratio' ? '9:16' : draft.ratio || '9:16'} com estilo ${draft.styleLabel || 'automatico'}.`,
+    },
+    {
+      key: 'genre',
+      label: 'Tipo e publico',
+      title: draft.storyType || 'Tipo de historia a definir',
+      body: draft.audience || 'A IA ainda precisa confirmar o publico-alvo.',
+    },
+    {
+      key: 'synopsis',
+      label: 'Sinopse',
+      title: draft.shortSynopsis || draft.title || 'Resumo do roteiro',
+      body: draft.synopsis || 'A sinopse vai aparecer aqui quando a etapa terminar.',
+    },
+    {
+      key: 'hook',
+      label: 'Gancho',
+      title: draft.hook || 'Gancho principal',
+      body: draft.characterBio || 'Personagens, conflitos e continuidade aparecem aqui para revisao.',
+    },
+  ]
+})
+const scriptMetadataCards = computed(() => {
+  const draft = scriptDraft.value
+  return [
+    {
+      key: 'seasons',
+      label: 'Temporadas',
+      title: String(Number(draft.seasons) || 1),
+      body: 'Quantidade planejada para o projeto.',
+    },
+    {
+      key: 'episodes',
+      label: 'Episodios',
+      title: String(Number(draft.episodes) || 1),
+      body: 'Episodios por temporada.',
+    },
+    {
+      key: 'storyType',
+      label: 'Tipo de historia',
+      title: draft.storyType || 'A definir',
+      body: '',
+    },
+    {
+      key: 'audience',
+      label: 'Publico-alvo',
+      title: draft.audience || 'A definir',
+      body: '',
+    },
+  ]
+})
+const scriptPromptCards = computed(() => {
+  const draft = scriptDraft.value
+  return [
+    {
+      key: 'hook',
+      title: 'Gancho principal',
+      body: draft.hook || 'Gancho principal ainda nao definido. Peca para a IA completar antes de avancar.',
+    },
+    {
+      key: 'shortSynopsis',
+      title: 'Sinopse curta',
+      body: draft.shortSynopsis || draft.synopsis || 'Sinopse curta ainda nao definida. Peca para a IA resumir o roteiro.',
+    },
+    {
+      key: 'characterBio',
+      title: 'Bio do personagem',
+      body: draft.characterBio || 'Bio dos personagens ainda nao definida. Peca para a IA detalhar relacoes, conflitos e continuidade.',
+    },
+  ]
+})
+const scriptEpisodeArtifactTitle = computed(() => {
+  if (episodeSummaries.value.length) return `${episodeSummaries.value.length} episodio(s) organizado(s)`
+  return 'Episodios ainda nao gerados'
+})
+const scriptEpisodeArtifactCards = computed(() => {
+  if (episodeSummaries.value.length) {
+    return episodeSummaries.value.slice(0, 6).map(episode => ({
+      key: `episode-${episode.id}`,
+      label: `Episodio ${episode.id}`,
+      title: episode.title || `Episodio ${episode.id}`,
+      body: episode.script || episode.summary || 'Resumo do episodio em preparacao.',
+    }))
+  }
+  return [{
+    key: 'episode-placeholder',
+    label: 'Proxima etapa',
+    title: 'Roteiro do episodio',
+    body: 'Quando os episodios forem criados, os roteiros aparecem aqui neste mesmo formato de chat.',
+  }]
+})
+const scriptVisibleChatMessages = computed(() =>
+  chatMessages.value.filter(message => {
+    const text = String(message?.text || '')
+    return !text.startsWith('Criar roteiro:') && !text.startsWith('Vou criar o roteiro primeiro.')
+  }),
+)
 const pendingEpisodes = computed(() => episodeSummaries.value.filter(episode => !episode.scriptReady).sort((a, b) => Number(a.id) - Number(b.id)))
 const pendingEpisodeCount = computed(() => pendingEpisodes.value.length)
 const selectedPendingEpisodeIds = computed(() => selectedEpisodeIds.value.filter(id => pendingEpisodes.value.some(episode => Number(episode.id) === Number(id))))
@@ -2679,7 +3687,7 @@ const agentStatusText = computed(() => {
   if (episodeScriptsGenerating.value) return 'Gerando ' + episodeScriptGenerationCount.value + ' roteiro' + (episodeScriptGenerationCount.value === 1 ? '' : 's') + ' de episódio...'
   if (episodeOutlinesReady.value && allEpisodeScriptsReady.value) return 'A história completa está pronta. Continue para a análise dos ativos de produção.'
   if (episodeOutlinesReady.value) return 'Os resumos dos episódios estão prontos. Continue para gerar os roteiros dos episódios.'
-  if (generatedScriptReady.value) return 'O resumo do seu roteiro está pronto. Continue para gerar os esboços dos episódios agora.'
+  if (generatedScriptReady.value) return 'O resumo do seu roteiro esta pronto. Continue para organizar os ativos de producao.'
   return 'Gerando um esboço de roteiro com base na sua ideia'
 })
 
@@ -3333,6 +4341,7 @@ function buildInitialScriptDraft(text) {
     idea,
     title: deriveTitle(idea, 'AI Generated Script'),
     episodes: episodeCount.value,
+    seasons: cinematicConfig.seasons || 1,
     ratio: selectedRatio.value,
     styleLabel: selectedStyleItem.value?.label || 'Automático',
     storyType: '',
@@ -3435,6 +4444,19 @@ function cinematicProductionStatePayload(stage = currentAgentStage.value) {
       stage,
     },
     generation_queue: cinematicPlan.value?.generation_queue || [],
+    chat_summary: cinematicProductionState.value?.chat_summary || null,
+    conversation_state: {
+      ...(cinematicProductionState.value?.conversation_state || {}),
+      selected_canvas_item: selectedCanvasAssistantContext.value,
+      mode: productionCanvasOpen.value ? 'canvas_chat' : 'studio_chat',
+    },
+    canvas_layout: {
+      node_positions: canvasNodePositions.value,
+      connections: canvasConnections.value,
+    },
+    selected_context: selectedCanvasAssistantContext.value,
+    final_canvas_ready: productionAssetsReady.value,
+    last_ai_actions: cinematicProductionState.value?.last_ai_actions || [],
     model: cinematicPlan.value?.engine?.recommended_text_model || 'gpt-5.5',
   }
 }
@@ -3595,35 +4617,23 @@ function leaveScriptFlow() {
 }
 
 async function continueGeneratedScript() {
-  if (scriptGenerating.value || episodeOutlineGenerating.value || episodeScriptsGenerating.value || creatingProject.value) return
-
-  const generationId = ++activeGenerationId
-  episodeOutlineGenerating.value = true
+  if (scriptGenerating.value || episodeScriptsGenerating.value || creatingProject.value) return
+  activeGenerationId += 1
+  clearScriptGenerationTimer()
+  productionAssets.value = repairProductionAssets(productionAssets.value)
+  productionAssetsReady.value = true
+  productionCanvasOpen.value = false
+  episodeStageOpen.value = false
+  episodeOutlineGenerating.value = false
   episodeOutlinesReady.value = false
-  await persistAgentState('episode_outlines_generating').catch(() => {})
-
-  try {
-    const generated = await storyStudioAPI.generateEpisodeOutlines({ script: storyStudioScriptPayload() })
-    if (generationId !== activeGenerationId) return
-    episodeSummaries.value = generated.episodes.map(episode => ({
-      id: Number(episode.episode_number),
-      title: episode.title,
-      summary: episode.summary,
-      scriptReady: false,
-      script: '',
-      expanded: false,
-    }))
-    episodeOutlineGenerating.value = false
-    episodeOutlinesReady.value = true
-    await persistEpisodeState()
-    await persistAgentState('episode_outlines_ready')
-  } catch (error) {
-    if (generationId !== activeGenerationId) return
-    episodeOutlineGenerating.value = false
-    episodeOutlinesReady.value = false
-    await persistAgentState('summary_ready', true).catch(() => {})
-    toast.error(error.message || 'A IA não conseguiu gerar os episódios')
-  }
+  episodeScriptsGenerating.value = false
+  batchSelectionActive.value = false
+  selectedEpisodeIds.value = []
+  activeProductionTab.value = productionAssets.value.roles.length
+    ? 'roles'
+    : Object.keys(productionAssets.value).find(key => productionAssets.value[key]?.length) || 'roles'
+  currentAgentStage.value = 'production_assets_ready'
+  await persistAgentState('production_assets_ready', true).catch(() => {})
 }
 
 function toggleBatchSelection() {
@@ -4219,8 +5229,8 @@ function openAgentStep(step) {
     backToEpisodeScripts()
     return
   }
-  if ((step === 2 || step === 3) && !scriptComplete.value) {
-    showScriptContinueConfirm.value = true
+  if (step === 2 && generatedScriptReady.value && !productionAssetsReady.value) {
+    continueGeneratedScript()
     return
   }
   if (step === 2) {
@@ -5261,9 +6271,23 @@ function isCanvasLinkHandleActive(type, index, side) {
   )
 }
 
+function setCanvasAssistantContext(type, index, extra = {}) {
+  const item = productionAssets.value?.[type]?.[index] || {}
+  selectedCanvasAssistantContext.value = {
+    type,
+    index,
+    key: canvasNodeKey(type, index),
+    label: item.name || item.title || extra.label || `${type} ${Number(index) + 1}`,
+    name: item.name || '',
+    description: item.description || item.prompt || item.appearanceName || item.perspectiveName || '',
+    ...extra,
+  }
+}
+
 function handleCanvasNodeClick(type, index) {
   if (canvasDragMoved.value) return
   focusedCanvasImageAssetKey.value = canvasNodeKey(type, index)
+  setCanvasAssistantContext(type, index)
   canvasNodeContextMenu.value = { open: false, x: 0, y: 0, type: '', index: -1 }
   if (!canvasConnectMode.value) {
     if (type === 'roles' || type === 'scenes' || type === 'objects') openCanvasGenerationChat(type, index)
@@ -5424,6 +6448,14 @@ function focusCanvasAsset(item, index) {
 function openProductionCanvasOverview() {
   productionCanvasOpen.value = true
   productionLibraryOpen.value = false
+  canvasAssistantCollapsed.value = false
+  if (!selectedCanvasAssistantContext.value) {
+    selectedCanvasAssistantContext.value = {
+      type: 'project',
+      label: scriptDraft.value.title || 'Projeto',
+      description: scriptDraftDescription(),
+    }
+  }
   nextTick(() => resetCanvasViewportOrigin())
 }
 
@@ -7375,8 +8407,9 @@ function backToEpisodeScripts() {
   productionAnalysisGenerating.value = false
   productionAssetSelectionActive.value = false
   selectedProductionAssetKeys.value = []
-  episodeOutlinesReady.value = true
-  currentAgentStage.value = hasProductionAssets.value ? 'production_assets_ready' : 'episode_outlines_ready'
+  episodeOutlineGenerating.value = false
+  episodeOutlinesReady.value = false
+  currentAgentStage.value = 'summary_ready'
   persistAgentState(currentAgentStage.value, true).catch(() => {})
 }
 
@@ -7414,7 +8447,7 @@ async function createFromPaste() {
 async function createFromPrompt() {
   const text = aiPrompt.value.trim()
   if (!text) return
-  await analyzeCinematicPlan()
+  createScriptFromHomeChat()
 }
 
 async function createBlankProject() {
@@ -7617,6 +8650,7 @@ function hydrateExistingProject(project) {
     idea: ideaPart || project.title || 'Ideia original do projeto',
     title: project.title || 'AI Generated Script',
     episodes: totalEpisodes,
+    seasons: Number(cinematicConfig.seasons) || 1,
     ratio: project.ratio || 'Default ratio',
     styleLabel: project.style || 'Automático',
     storyType: project.style || 'Drama serial adaptado por IA',
@@ -7658,12 +8692,12 @@ function hydrateExistingProject(project) {
   canvasNodePositions.value = {}
   canvasConnections.value = []
   activeProductionTab.value = 'roles'
-  episodeOutlinesReady.value = true
+  episodeOutlinesReady.value = false
   episodeScriptsGenerating.value = false
   batchSelectionActive.value = false
   selectedEpisodeIds.value = []
   allEpisodeScriptsExpanded.value = false
-  currentAgentStage.value = 'episode_outlines_ready'
+  currentAgentStage.value = 'summary_ready'
   closeFloatingMenus()
   nextTick(() => { hydratingProject.value = false })
 }
@@ -7745,6 +8779,546 @@ watch([productionAssets, canvasNodePositions, canvasConnections], () => {
   queueAgentAutosave(true)
   updateCanvasPromptMentionChips()
 }, { deep: true })
+
+const showProductionDashboard = ref(false)
+const showExportModal = ref(false)
+const exportFormat = ref('markdown')
+const exportLoading = ref(false)
+const exportPreview = ref('')
+const showCinematicChat = ref(false)
+const chatMessages = ref([])
+const chatInput = ref('')
+const canvasAssistantInput = ref('')
+const canvasAssistantCollapsed = ref(false)
+const selectedCanvasAssistantContext = ref(null)
+const chatLoading = ref(false)
+const chatMessagesRef = ref(null)
+const canvasChatMessagesRef = ref(null)
+const showGenerationQueue = ref(false)
+const generationQueue = ref([])
+const showABComparison = ref(false)
+const abVariants = ref([])
+const abVariantsLoading = ref(false)
+const abSelectedMode = ref('')
+const showVersionHistory = ref(false)
+const versionHistory = ref([])
+
+const showStoryboardViewer = ref(false)
+const sbActivePart = ref(1)
+const sbSelectedPanel = ref(null)
+
+const showPanelRefinement = ref(false)
+const refinementPanel = ref(null)
+const refinementInstruction = ref('')
+const refinementVariantMode = ref('')
+const refinementTargetModel = ref('')
+const refinementLoading = ref(false)
+const refinementResult = ref(null)
+
+const showVisualBible = ref(false)
+const showDesignSheet = ref(false)
+const showNarrativeTemplates = ref(false)
+const selectedNarrativeTemplate = ref('')
+const showImprovements = ref(false)
+
+const visualBible = computed(() => cinematicPlan.value?.visual_bible || null)
+const designSheetData = computed(() => cinematicDesignSheet.value || null)
+const improvementsList = computed(() => cinematicImprovements.value || [])
+const canvasAssistantTitle = computed(() => selectedCanvasAssistantContext.value?.label || 'Assistente de edicao')
+const canvasAssistantContextLabel = computed(() => {
+  const context = selectedCanvasAssistantContext.value
+  if (!context) return 'Projeto inteiro'
+  const typeLabel = {
+    roles: 'Personagem',
+    scenes: 'Local',
+    objects: 'Objeto',
+    media: 'Midia',
+    episode: 'Episodio',
+    part: 'Parte',
+    panel: 'Painel',
+  }[context.type] || 'Item'
+  return `${typeLabel}${context.index != null ? ` #${Number(context.index) + 1}` : ''}`
+})
+
+const narrativeTemplates = [
+  { id: 'emotional', label: 'Drama / Emocional', description: 'Foco em performance facial, Close-ups intimistas, ritmo contemplativo', icon: Heart, camera: 'Close-up, planos médios, movimentos suaves', rhythm: 'Lento, pausas dramáticas', lighting: 'Natural, quente, sombras suaves' },
+  { id: 'action', label: 'Ação / Confronto', description: 'Câmera dinâmica, movimentos rápidos, cortes agressivos', icon: Zap, camera: 'Planos abertos, câmera na mão, Tracking shots', rhythm: 'Rápido, cortes frequentes', lighting: 'Alto contraste, luz dura' },
+  { id: 'suspense', label: 'Suspense Psicológico', description: 'Tensão crescente, planos fixos, iluminação low-key', icon: Eye, camera: 'Planos fixos, zoom lento, profundidade de campo', rhythm: 'Médio com pausas tensas', lighting: 'Low-key, contrastes fortes, chiaroscuro' },
+  { id: 'romance', label: 'Romance Emocional', description: 'Soft focus, iluminação suave, planos delicados', icon: Heart, camera: 'Planos fechados, movements suaves, shallow DOF', rhythm: 'Lento, fluxo contínuo', lighting: 'Suave, golden hour, backlit' },
+  { id: 'scifi', label: 'Sci-Fi Neon', description: 'Estética futurista, luzes neon, composições simétricas', icon: Sparkles, camera: 'Composições simétricas, planos amplos', rhythm: 'Médio, transições digitais', lighting: 'Neon, cores frias, luzes artificiais' },
+  { id: 'horror', label: 'Terror Atmosférico', description: 'Sombras, planos obscuros, sustos calculados', icon: Eye, camera: 'Planos fixos longos, POV, câmera lenta', rhythm: 'Lento com picos de susto', lighting: 'Muito low-key, fontes pontuais, névoa' },
+]
+
+const selectedNarrativeTemplateData = computed(() => narrativeTemplates.find(t => t.id === selectedNarrativeTemplate.value))
+
+function selectNarrativeTemplate(id) {
+  selectedNarrativeTemplate.value = id
+}
+
+function applyNarrativeTemplate() {
+  if (!selectedNarrativeTemplate.value) return
+  cinematicConfig.directorMode = selectedNarrativeTemplate.value
+  toast.success(`Template "${selectedNarrativeTemplateData.value?.label}" aplicado`)
+  showNarrativeTemplates.value = false
+}
+
+function copyDesignSheetPrompt() {
+  if (!designSheetData.value?.prompt) return
+  navigator.clipboard.writeText(designSheetData.value.prompt).then(() => toast.success('Prompt copiado!')).catch(() => toast.error('Falha ao copiar'))
+}
+
+const storyboardParts = computed(() => cinematicPlan.value?.storyboard_package?.parts || [])
+const totalPanelCount = computed(() => storyboardParts.value.reduce((sum, part) => sum + (part.panels?.length || 0), 0))
+const storyboardTotalPanels = computed(() => storyboardParts.value.reduce((sum, p) => sum + (p.panels?.length || 0), 0))
+const activeStoryboardPart = computed(() => storyboardParts.value.find(p => p.part_number === sbActivePart.value) || storyboardParts.value[0])
+
+function formatTimecode(tc) {
+  if (!tc) return ''
+  const fmt = (s) => { const m = Math.floor(s / 60); const sec = Math.round(s % 60); return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` }
+  if (tc.start_seconds != null && tc.end_seconds != null) return `${fmt(tc.start_seconds)} → ${fmt(tc.end_seconds)}`
+  return String(tc)
+}
+
+function copyPanelPrompt(panel) {
+  const text = [panel.image_prompt, panel.video_prompt, panel.negative_prompt].filter(Boolean).join('\n\n---\n\n')
+  navigator.clipboard.writeText(text).then(() => toast.success('Prompt copiado!')).catch(() => toast.error('Falha ao copiar'))
+}
+
+function openPanelRefinement(panel) {
+  refinementPanel.value = panel
+  refinementInstruction.value = ''
+  refinementVariantMode.value = ''
+  refinementTargetModel.value = ''
+  refinementResult.value = null
+  showPanelRefinement.value = true
+}
+
+async function executePanelRefinement() {
+  if (!refinementPanel.value || refinementLoading.value) return
+  refinementLoading.value = true
+  refinementResult.value = null
+  try {
+    const result = await storyStudioAPI.refinePanelPrompt({
+      panel: refinementPanel.value,
+      instruction: refinementInstruction.value.trim(),
+      variant_mode: refinementVariantMode.value || undefined,
+      target_model: refinementTargetModel.value || undefined,
+    })
+    refinementResult.value = result
+    toast.success('Painel refinado com sucesso')
+  } catch (error) {
+    toast.error(error.message || 'Falha ao refinar painel')
+  } finally {
+    refinementLoading.value = false
+  }
+}
+
+function copyRefinedPrompt() {
+  if (!refinementResult.value) return
+  const text = [refinementResult.value.image_prompt, refinementResult.value.negative_prompt].filter(Boolean).join('\n\n---\n\n')
+  navigator.clipboard.writeText(text).then(() => toast.success('Prompt refinado copiado!')).catch(() => toast.error('Falha ao copiar'))
+}
+
+async function approveStage(stageKey) {
+  if (!currentProjectId.value) return
+  try {
+    await storyStudioAPI.reviewProductionStage(currentProjectId.value, { stage_key: stageKey, status: 'reviewed' })
+    toast.success(`Etapa "${stageKey}" aprovada`)
+    loadProductionDashboard()
+  } catch (error) {
+    toast.error(error.message || 'Falha ao aprovar etapa')
+  }
+}
+
+const productionDashboardStages = computed(() => {
+  const plan = cinematicPlan.value
+  const hasDesignSheet = !!cinematicDesignSheet.value?.prompt
+  const hasStoryboard = !!cinematicStoryboardPackage.value?.parts?.length
+  const allPanelsReviewed = hasStoryboard && cinematicStoryboardPackage.value.parts.every(p => p.review_status === 'reviewed')
+  const stages = [
+    { key: 'briefing', label: 'Briefing', description: 'Configuracao do projeto e parametros', status: scriptDraft.value.storyType ? 'complete' : 'pending' },
+    { key: 'season_arc', label: 'Arco de temporada', description: 'Estrutura narrativa e viradas', status: plan?.season_arc?.main_arc ? 'complete' : 'pending' },
+    { key: 'visual_bible', label: 'Biblia visual', description: 'Personagens, locais, paleta e regras', status: plan?.visual_bible?.logline ? 'complete' : 'pending' },
+    { key: 'design_sheet', label: 'Design sheet', description: 'Ficha visual de personagens e cenarios', status: hasDesignSheet ? 'complete' : 'pending' },
+    { key: 'script', label: 'Roteiro', description: 'Episodios gerados e revisados', status: allEpisodeScriptsReady.value ? 'complete' : episodeSummaries.value.some(e => e.scriptReady) ? 'in_progress' : 'pending' },
+    { key: 'parts', label: 'Partes', description: 'Divisao por partes e recomendacoes', status: selectedCinematicParts > 0 ? 'complete' : 'pending' },
+    { key: 'storyboard', label: 'Storyboard', description: 'Painels e frames gerados', status: hasStoryboard ? (allPanelsReviewed ? 'complete' : 'needs_review') : 'pending' },
+    { key: 'final_prompts', label: 'Prompts finais', description: 'Prompts revisados e prontos', status: allPanelsReviewed ? 'complete' : hasStoryboard ? 'in_progress' : 'pending' },
+    { key: 'export', label: 'Exportacao', description: 'Download do projeto completo', status: exportPreview.value ? 'complete' : 'pending' },
+  ]
+  return stages
+})
+
+function formatVersionDate(iso) {
+  if (!iso) return ''
+  try { return new Date(iso).toLocaleString('pt-BR') } catch { return String(iso) }
+}
+
+async function loadProductionDashboard() {
+  showProductionDashboard.value = true
+  if (currentProjectId.value) {
+    try {
+      const state = await storyStudioAPI.getProductionState(currentProjectId.value)
+      if (state?.generation_queue) generationQueue.value = state.generation_queue
+      if (state?.version_history) versionHistory.value = state.version_history
+    } catch {}
+  }
+}
+
+async function loadExportContent() {
+  if (exportLoading.value) return
+  exportLoading.value = true
+  exportPreview.value = ''
+  try {
+    const result = await storyStudioAPI.exportPackage({
+      format: exportFormat.value,
+      brief: cinematicPlan.value?.project || scriptDraft.value,
+      plan: cinematicPlan.value,
+      storyboard_package: cinematicPlan.value?.storyboard_package,
+    })
+    exportPreview.value = result?.markdown || result?.json || result?.pdf_html || JSON.stringify(result, null, 2)?.slice(0, 8000) || ''
+  } catch (error) {
+    toast.error(error.message || 'Falha ao gerar exportação')
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+function copyExportContent() {
+  if (!exportPreview.value) return
+  navigator.clipboard.writeText(exportPreview.value).then(() => toast.success('Copiado!')).catch(() => toast.error('Falha ao copiar'))
+}
+
+function downloadExport() {
+  if (!exportPreview.value) return
+  const ext = exportFormat.value === 'markdown' ? 'md' : exportFormat.value === 'json' ? 'json' : 'html'
+  const mime = exportFormat.value === 'json' ? 'application/json' : exportFormat.value === 'markdown' ? 'text/markdown' : 'text/html'
+  const blob = new Blob([exportPreview.value], { type: mime })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `huobao-drama-export.${ext}`
+  a.click()
+  URL.revokeObjectURL(url)
+  toast.success('Download iniciado')
+}
+
+watch(exportFormat, () => { if (showExportModal.value) loadExportContent() })
+watch(showExportModal, (v) => { if (v) loadExportContent() })
+
+async function sendChatMessageLegacy() {
+  const text = chatInput.value.trim()
+  if (!text || chatLoading.value) return
+  chatMessages.value.push({ role: 'user', text })
+  chatInput.value = ''
+  chatLoading.value = true
+  nextTick(() => { if (chatMessagesRef.value) chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight })
+  try {
+    const result = await storyStudioAPI.cinemaChat({
+      message: text,
+      context: { plan: cinematicPlan.value, brief: scriptDraft.value },
+    })
+    chatMessages.value.push({ role: 'assistant', text: result?.response || 'Desculpe, não processei sua pergunta.', actions: result?.suggested_actions || [] })
+  } catch (error) {
+    chatMessages.value.push({ role: 'assistant', text: error.message || 'Erro ao processar mensagem.' })
+  } finally {
+    chatLoading.value = false
+    nextTick(() => { if (chatMessagesRef.value) chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight })
+  }
+}
+
+function executeChatActionLegacy(action) {
+  if (action === 'review_visual_bible') { showCinematicChat.value = false; showVisualBible.value = true }
+  else if (action === 'validate_prompts') { showCinematicChat.value = false; loadCinematicQualityPreview() }
+  else if (action === 'refine_selected_panel') { showCinematicChat.value = false; showStoryboardViewer.value = true }
+}
+
+function scrollChatLogs() {
+  nextTick(() => {
+    if (chatMessagesRef.value) chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight
+    if (canvasChatMessagesRef.value) canvasChatMessagesRef.value.scrollTop = canvasChatMessagesRef.value.scrollHeight
+  })
+}
+
+function applyCinemaChatStatePatch(patch) {
+  if (!patch || typeof patch !== 'object') return
+  cinematicProductionState.value = {
+    ...(cinematicProductionState.value || {}),
+    ...patch,
+  }
+  if (patch.selected_context) selectedCanvasAssistantContext.value = patch.selected_context
+}
+
+function buildCinemaChatCurrentState() {
+  return {
+    ...cinematicProductionStatePayload(),
+    production_assets_ready: productionAssetsReady.value,
+    production_assets: productionAssets.value,
+    episodes: episodeSummaries.value.map(episode => ({
+      id: episode.id,
+      episode_number: episode.episode_number || episode.id,
+      title: episode.title,
+      summary: episode.summary,
+      script_ready: Boolean(episode.scriptReady),
+    })),
+  }
+}
+
+async function sendChatMessage(mode = 'studio_chat', presetText = '') {
+  const source = mode === 'canvas_chat' ? canvasAssistantInput : chatInput
+  const text = String(presetText || source.value || '').trim()
+  if (!text || chatLoading.value) return
+  chatMessages.value.push({ role: 'user', text })
+  if (mode === 'canvas_chat') canvasAssistantInput.value = ''
+  else chatInput.value = ''
+  chatLoading.value = true
+  scrollChatLogs()
+  try {
+    const result = await storyStudioAPI.cinemaChat({
+      drama_id: currentProjectId.value || undefined,
+      session_id: currentProjectId.value ? `drama-${currentProjectId.value}` : 'draft-home',
+      message: text,
+      mode,
+      current_focus: mode === 'canvas_chat' ? selectedCanvasAssistantContext.value?.type || 'project' : 'project',
+      selected_canvas_item: mode === 'canvas_chat' ? selectedCanvasAssistantContext.value : null,
+      current_state: buildCinemaChatCurrentState(),
+      plan: cinematicPlan.value,
+      brief: cinematicBrief(scriptDraft.value.idea || aiPrompt.value || text),
+      context: { plan: cinematicPlan.value, brief: scriptDraft.value },
+    })
+    applyCinemaChatStatePatch(result?.state_patch)
+    if (result?.canvas_patch?.selected_item) selectedCanvasAssistantContext.value = result.canvas_patch.selected_item
+    chatMessages.value.push({
+      role: 'assistant',
+      text: result?.assistant_message || result?.response || 'Desculpe, nao processei sua pergunta.',
+      actions: result?.proposed_actions || result?.suggested_actions || result?.actions || [],
+    })
+    if (result?.warnings?.length) toast.warning(result.warnings[0])
+  } catch (error) {
+    chatMessages.value.push({ role: 'assistant', text: error.message || 'Erro ao processar mensagem.' })
+  } finally {
+    chatLoading.value = false
+    scrollChatLogs()
+  }
+}
+
+function sendStudioQuickAction(text) {
+  const idea = aiPrompt.value.trim() || scriptDraft.value.idea.trim()
+  sendChatMessage('studio_chat', idea ? `${text}: ${idea}` : text)
+}
+
+function editScriptPromptCard(prompt) {
+  if (!prompt) return
+  expandedScriptPrompt.value = null
+  requestScriptPromptChanges(prompt)
+}
+
+function scriptPromptDraftField(key) {
+  const fields = {
+    hook: 'hook',
+    shortSynopsis: 'shortSynopsis',
+    characterBio: 'characterBio',
+  }
+  return fields[key] || ''
+}
+
+function saveScriptPromptEdit(prompt) {
+  const field = scriptPromptDraftField(prompt?.key)
+  if (!field) return
+  scriptDraft.value = {
+    ...scriptDraft.value,
+    [field]: editingScriptPromptText.value.trim(),
+  }
+  editingScriptPromptKey.value = ''
+  editingScriptPromptText.value = ''
+  expandedScriptPrompt.value = null
+  queueAgentAutosave()
+  persistAgentState(currentAgentStage.value || 'summary_ready', true).catch(() => {})
+  toast.success('Campo atualizado')
+}
+
+function cancelScriptPromptEdit() {
+  editingScriptPromptKey.value = ''
+  editingScriptPromptText.value = ''
+}
+
+function updateScriptPromptCard(key, value) {
+  const field = scriptPromptDraftField(key)
+  if (!field) return
+  scriptDraft.value = {
+    ...scriptDraft.value,
+    [field]: value,
+  }
+  queueAgentAutosave()
+}
+
+function openScriptPromptRequest(key) {
+  activeScriptPromptRequestKey.value = key
+}
+
+function requestScriptPromptChanges(prompt) {
+  if (!prompt) return
+  const request = String(scriptPromptAiRequests.value[prompt.key] || '').trim()
+  if (!request) return
+  scriptPromptAiRequests.value = {
+    ...scriptPromptAiRequests.value,
+    [prompt.key]: '',
+  }
+  activeScriptPromptRequestKey.value = ''
+  expandedScriptPrompt.value = null
+  sendChatMessage('studio_chat', `Solicitacao para alterar "${prompt.title}": ${request}. Conteudo atual: ${prompt.body}`)
+}
+
+function copyScriptPromptCard(prompt) {
+  const text = String(prompt?.body || '').trim()
+  if (!text) {
+    toast.info('Nada para copiar.')
+    return
+  }
+  navigator.clipboard
+    .writeText(text)
+    .then(() => toast.success('Copiado!'))
+    .catch(() => toast.error('Falha ao copiar'))
+}
+
+function expandScriptPromptCard(prompt) {
+  if (!prompt) return
+  expandedScriptPrompt.value = { ...prompt }
+}
+
+function closeExpandedScriptPrompt() {
+  expandedScriptPrompt.value = null
+}
+
+function createScriptFromHomeChat() {
+  const text = activeComposer.value === 'ai'
+    ? (aiPrompt.value.trim() || chatInput.value.trim() || scriptDraft.value.idea.trim())
+    : (chatInput.value.trim() || aiPrompt.value.trim() || scriptDraft.value.idea.trim())
+  if (!text) {
+    toast.info('Descreva a ideia do roteiro no chat primeiro.')
+    return
+  }
+  aiPrompt.value = text
+  chatMessages.value.push({ role: 'user', text: `Criar roteiro: ${text}` })
+  chatMessages.value.push({ role: 'assistant', text: 'Vou criar o roteiro primeiro. Depois disso o canvas final fica disponivel para organizar episodios, temporadas, paineis e prompts.', actions: [] })
+  chatInput.value = ''
+  scrollChatLogs()
+  startScriptGeneration(text)
+}
+
+function sendCanvasQuickAction(text) {
+  sendChatMessage('canvas_chat', text)
+}
+
+function chatActionLabel(action) {
+  const labels = {
+    generate_script: 'Gerar roteiro',
+    create_season: 'Criar temporada',
+    build_storyboard: 'Montar storyboard',
+    open_canvas: 'Abrir canvas',
+    review_visual_bible: 'Biblia visual',
+    validate_prompts: 'Validar prompts',
+    refine_selected_panel: 'Refinar painel',
+  }
+  return labels[action] || String(action).replace(/_/g, ' ')
+}
+
+function executeChatAction(action) {
+  if (action === 'generate_script') {
+    const text = aiPrompt.value.trim() || scriptDraft.value.idea.trim()
+    if (text) startScriptGeneration(text)
+    else toast.info('Digite a ideia do projeto antes de gerar o roteiro.')
+  } else if (action === 'create_season') {
+    toggleControl('episodes')
+  } else if (action === 'build_storyboard') {
+    showStoryboardViewer.value = true
+  } else if (action === 'open_canvas') {
+    if (productionAssetsReady.value) openProductionCanvasOverview()
+    else toast.info('Gere ou carregue os ativos de producao antes de abrir o canvas.')
+  } else if (action === 'review_visual_bible') { showCinematicChat.value = false; showVisualBible.value = true }
+  else if (action === 'validate_prompts') { showCinematicChat.value = false; loadCinematicQualityPreview() }
+  else if (action === 'refine_selected_panel') { showCinematicChat.value = false; showStoryboardViewer.value = true }
+}
+
+async function loadGenerationQueue() {
+  showGenerationQueue.value = true
+  if (currentProjectId.value) {
+    try {
+      const state = await storyStudioAPI.getProductionState(currentProjectId.value)
+      if (state?.generation_queue) generationQueue.value = state.generation_queue
+    } catch {}
+  }
+  if (!generationQueue.value.length) {
+    generationQueue.value = [
+      { label: 'Design Concept Sheet', description: 'Prompt e imagem do conceito visual', status: 'pending' },
+      { label: 'Storyboard por partes', description: 'Geração de painéis por parte', status: 'pending' },
+      { label: 'Split de frames', description: 'Divisão automática conforme layout', status: 'pending' },
+      { label: 'Refinamento de prompts', description: 'Refinamento final dos prompts', status: 'pending' },
+    ]
+  }
+}
+
+async function loadABVariants() {
+  if (abVariantsLoading.value) return
+  abVariantsLoading.value = true
+  abVariants.value = []
+  try {
+    const firstPanel = cinematicPlan.value?.storyboard_package?.parts?.[0]?.panels?.[0]
+    const result = await storyStudioAPI.generatePromptVariants({
+      prompt: firstPanel?.image_prompt || 'Cinematic dramatic frame, consistent character',
+      negative_prompt: firstPanel?.negative_prompt,
+    })
+    abVariants.value = result?.variants || []
+    if (abVariants.value.length) abSelectedMode.value = abVariants.value[0].mode
+  } catch (error) {
+    toast.error(error.message || 'Falha ao gerar variantes')
+  } finally {
+    abVariantsLoading.value = false
+  }
+}
+
+function copyABPrompt(prompt) {
+  navigator.clipboard.writeText(prompt).then(() => toast.success('Prompt copiado!')).catch(() => toast.error('Falha ao copiar'))
+}
+
+function applyABVariant() {
+  const variant = abVariants.value.find(v => v.mode === abSelectedMode.value)
+  if (!variant) return
+  const firstPanel = cinematicStoryboardPackage.value?.parts?.[0]?.panels?.[0]
+  if (firstPanel) {
+    firstPanel.image_prompt = variant.prompt
+    if (variant.quality) firstPanel.quality_score = variant.quality
+    persistAgentState(currentAgentStage.value, true).catch(() => {})
+  }
+  toast.success(`Variante "${variant.label}" aplicada ao primeiro painel`)
+  showABComparison.value = false
+}
+
+async function loadVersionHistory() {
+  showVersionHistory.value = true
+  if (currentProjectId.value) {
+    try {
+      const state = await storyStudioAPI.getProductionState(currentProjectId.value)
+      versionHistory.value = state?.version_history || []
+    } catch {}
+  }
+}
+
+async function restoreVersion(entry) {
+  if (!entry) return
+  if (!currentProjectId.value) return
+  try {
+    const state = await storyStudioAPI.getProductionState(currentProjectId.value)
+    if (state?.plan) cinematicPlan.value = state.plan
+    if (state?.design_sheet) cinematicDesignSheet.value = state.design_sheet
+    if (state?.storyboard_package) cinematicStoryboardPackage.value = state.storyboard_package
+    if (state?.improvements) cinematicImprovements.value = state.improvements
+    toast.info('Estado atual recarregado do servidor')
+  } catch {
+    toast.error('Falha ao recarregar estado')
+  }
+  showVersionHistory.value = false
+}
 
 onBeforeUnmount(() => {
   clearScriptGenerationTimer()
@@ -9188,6 +10762,519 @@ onBeforeUnmount(() => {
   min-height: 534px;
 }
 
+.script-structure-card.chat-only {
+  min-height: 642px;
+  border: 0;
+  border-radius: 36px;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.script-structure-card.chat-only .script-card-scroll {
+  padding: 40px 64px 120px;
+}
+
+.script-chat-panel {
+  min-height: 100%;
+  display: block;
+  overflow: visible;
+  border-radius: inherit;
+  background: #fff;
+}
+
+.script-chat-messages {
+  min-height: 0;
+  overflow: visible;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.script-chat-turn {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+}
+
+.script-chat-turn.is-user {
+  flex-direction: row-reverse;
+}
+
+.script-chat-avatar {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #f0f1f4;
+  color: #525864;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.script-chat-turn.is-assistant .script-chat-avatar {
+  background: #5d3edc;
+  color: #fff;
+}
+
+.script-chat-bubble {
+  width: min(680px, 100%);
+  padding: 2px 0 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #151515;
+}
+
+.script-chat-turn.is-user .script-chat-bubble {
+  width: min(560px, 100%);
+  padding: 16px 18px;
+  border: 1px solid #e3e6eb;
+  border-radius: 18px;
+  background: #f7f8fa;
+  color: #151515;
+}
+
+.script-chat-bubble > span {
+  display: block;
+  margin-bottom: 12px;
+  color: #7b8190;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.script-chat-turn.is-user .script-chat-bubble > span {
+  color: #7b8190;
+}
+
+.script-chat-bubble p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.script-chat-steps {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.script-chat-step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #8a909b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.script-chat-step span {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #eef0f4;
+  color: #7b8190;
+}
+
+.script-chat-step span i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.script-chat-step.done {
+  color: #191919;
+}
+
+.script-chat-step.done span {
+  background: #151515;
+  color: #fff;
+}
+
+.script-chat-step.running {
+  color: #5d3edc;
+}
+
+.script-chat-step.running span {
+  background: rgba(93, 62, 220, 0.12);
+  color: #5d3edc;
+}
+
+.artifact-bubble {
+  background: transparent;
+}
+
+.script-artifact-stack {
+  display: grid;
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.script-artifact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.script-artifact-card {
+  min-width: 0;
+  padding: 16px 16px 17px;
+  border: 1px solid #eceef1;
+  border-radius: 14px;
+  background: #fafafa;
+}
+
+.script-original-card,
+.script-summary-card {
+  background: #fff;
+}
+
+.script-artifact-card small {
+  display: block;
+  margin-bottom: 10px;
+  color: #858b96;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.script-artifact-card strong {
+  display: block;
+  color: #101010;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.script-artifact-card p {
+  margin-top: 10px;
+  color: #606773;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.script-prompt-card {
+  padding: 20px 22px;
+  border: 1px solid #e5e7eb;
+  border-radius: 22px;
+  background: #f6f7f9;
+  color: #101010;
+}
+
+.script-prompt-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.script-prompt-card h3 {
+  margin: 0;
+  color: #101010;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.script-prompt-card header div {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.script-prompt-ai-request {
+  width: min(292px, 34vw);
+  height: 36px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 5px 0 13px;
+  border: 1px solid #dfe3ea;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.script-prompt-ai-request input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #20242c;
+  font: 600 12px/1 var(--font-body);
+}
+
+.script-prompt-ai-request input::placeholder {
+  color: #747b87;
+}
+
+.script-prompt-card .script-prompt-ai-request button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: #e8ebf1;
+  color: #5a6170;
+}
+
+.script-prompt-card .script-prompt-ai-request button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.script-prompt-card button {
+  height: 34px;
+  min-width: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid #dde1e7;
+  border-radius: 999px;
+  background: #fff;
+  color: #222;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.script-prompt-card p {
+  margin: 0;
+  color: #20242c;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.72;
+}
+
+.script-prompt-editor {
+  width: 100%;
+  min-height: 152px;
+  resize: vertical;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  color: #20242c;
+  font: 500 14px/1.65 var(--font-body);
+}
+
+.script-prompt-editor:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.script-prompt-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.script-prompt-edit-actions button.primary {
+  border-color: #111;
+  background: #111;
+  color: #fff;
+}
+
+.script-prompt-overlay {
+  z-index: 220;
+}
+
+.script-prompt-modal {
+  width: min(760px, calc(100vw - 40px));
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 64px rgba(20, 24, 35, 0.18);
+}
+
+.script-prompt-modal-body {
+  overflow-y: auto;
+  padding: 0 24px 24px;
+}
+
+.script-prompt-modal-body p {
+  margin: 0;
+  padding: 20px 22px;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  background: #f6f7f9;
+  color: #20242c;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.72;
+  white-space: pre-wrap;
+}
+
+.script-episode-artifacts {
+  padding: 18px;
+  border: 1px solid #eceef1;
+  border-radius: 18px;
+  background: #fff;
+}
+
+.script-episode-artifacts > header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.script-episode-artifacts small,
+.script-episode-list span {
+  color: #858b96;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.script-episode-artifacts > header strong {
+  color: #101010;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.script-episode-list {
+  display: grid;
+  gap: 10px;
+}
+
+.script-episode-list article {
+  padding: 14px 15px;
+  border: 1px solid #eceef1;
+  border-radius: 14px;
+  background: #fafafa;
+}
+
+.script-episode-list strong {
+  display: block;
+  margin-top: 7px;
+  color: #101010;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.script-episode-list p {
+  margin-top: 8px;
+  color: #606773;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.script-chat-next {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.script-chat-next button {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid #e2e4e8;
+  border-radius: 999px;
+  background: #fff;
+  color: #111;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.script-chat-next button:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+
+.script-chat-next button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.script-chat-empty {
+  flex: 1;
+  min-height: 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: #8e939b;
+  text-align: center;
+}
+
+.script-chat-empty p {
+  max-width: 430px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.script-chat-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  gap: 10px;
+  padding: 16px 64px 22px;
+  border-top: 1px solid #f0f1f2;
+  background: #fff;
+}
+
+.script-chat-input textarea {
+  min-height: 56px;
+  max-height: 140px;
+  resize: vertical;
+  padding: 16px 18px;
+  border: 1px solid #e2e4e8;
+  border-radius: 18px;
+  outline: none;
+  background: #fafafa;
+  color: #151515;
+  font: 400 14px/1.45 var(--font-body);
+}
+
+.script-chat-input textarea:focus {
+  border-color: #c9ccd1;
+  background: #fff;
+}
+
+.script-chat-input button {
+  width: 42px;
+  height: 42px;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 12px;
+  background: #111;
+  color: #fff;
+  cursor: pointer;
+}
+
+.script-chat-input button:disabled {
+  cursor: not-allowed;
+  background: #c9d8ff;
+  color: #fff;
+}
+
 .script-section {
   color: #111;
 }
@@ -9390,9 +11477,11 @@ onBeforeUnmount(() => {
 
 .script-summary-readonly-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 0.75fr) minmax(250px, 1fr) minmax(190px, 0.8fr);
-  gap: 42px;
-  margin: 30px 0 34px 15px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin: 30px 0 34px 0;
+  width: 100%;
+  min-width: 0;
 }
 
 .script-summary-readonly-grid > div,
@@ -9413,9 +11502,9 @@ onBeforeUnmount(() => {
 .script-summary-readonly-copy p {
   margin: 0;
   color: #151515;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 400;
-  line-height: 1.7;
+  line-height: 1.5;
 }
 
 .script-summary-readonly-copy {
@@ -10213,6 +12302,44 @@ onBeforeUnmount(() => {
   opacity: 0.5;
 }
 
+.agent-status-bar.chat-mode {
+  width: min(680px, calc(100vw - 40px));
+  grid-template-columns: 28px minmax(0, 1fr);
+}
+
+.agent-status-chat {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 10px;
+}
+
+.agent-status-chat input {
+  min-width: 0;
+  width: 100%;
+  height: 34px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agent-status-chat input::placeholder {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.agent-status-chat button {
+  min-width: 40px;
+  width: 40px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .agent-status-bar.episodes-ready {
   width: min(820px, calc(100vw - 40px));
   grid-template-columns: 28px minmax(260px, 1fr) auto auto;
@@ -10555,7 +12682,7 @@ onBeforeUnmount(() => {
 .cinematic-setup-popover {
   left: auto;
   right: -92px;
-  width: 430px;
+  width: 300px;
   display: grid;
   gap: 14px;
   padding: 16px;
@@ -10580,37 +12707,51 @@ onBeforeUnmount(() => {
   font-weight: 700;
   color: #101010;
 }
+.cinematic-episodes-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f2f2f2;
+  font-size: 12px;
+  font-weight: 600;
+  color: #101010;
+  white-space: nowrap;
+}
 
 .cinematic-setup-popover header span {
   color: #8f8f8f;
   font-size: 12px;
   line-height: 1.4;
 }
-
-.cinematic-engine-badge {
-  min-width: max-content;
-  padding: 4px 9px;
-  border-radius: 999px;
-  background: #f2f2f2;
-  color: #777 !important;
-  font-size: 11px !important;
-  font-weight: 700;
+.cinematic-setup-sub {
+  display: block;
+  margin-top: 2px;
 }
 
-.cinematic-engine-badge.ready {
-  background: #ede7ff;
-  color: #6d42dc !important;
-}
-
-.cinematic-setup-grid,
-.cinematic-advanced-grid {
+.cinematic-setup-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
+.cinematic-episodes-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 4px;
+}
+.cinematic-episodes-sub {
+  color: #8f8f8f;
+  font-size: 12px;
+}
+.cinematic-setup-grid input[type="number"]::-webkit-inner-spin-button,
+.cinematic-setup-grid input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.cinematic-setup-grid input[type="number"] {
+  -moz-appearance: textfield;
+}
 
-.cinematic-setup-grid label,
-.cinematic-advanced-grid label {
+.cinematic-setup-grid label {
   display: grid;
   gap: 6px;
   color: #6f6f6f;
@@ -10619,8 +12760,7 @@ onBeforeUnmount(() => {
 }
 
 .cinematic-setup-grid input,
-.cinematic-setup-grid select,
-.cinematic-advanced-grid select {
+.cinematic-setup-grid select {
   width: 100%;
   height: 36px;
   padding: 0 11px;
@@ -10633,97 +12773,45 @@ onBeforeUnmount(() => {
 }
 
 .cinematic-setup-grid input:focus,
-.cinematic-setup-grid select:focus,
-.cinematic-advanced-grid select:focus {
+.cinematic-setup-grid select:focus {
   border-color: #b7a1ff;
   box-shadow: 0 0 0 3px rgba(146, 92, 255, 0.12);
 }
 
-.cinematic-total-row {
-  height: 42px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 13px;
-  border-radius: 12px;
-  background: #f6f6f6;
-  color: #777;
-  font-size: 12px;
-}
-
-.cinematic-total-row strong {
-  color: #111;
-  font-weight: 700;
-}
-
-.cinematic-advanced {
-  border-top: 1px solid #efefef;
-  padding-top: 2px;
-}
-
-.cinematic-advanced summary {
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: #333;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-  list-style: none;
-}
-
-.cinematic-advanced summary::-webkit-details-marker {
-  display: none;
-}
-
-.cinematic-advanced[open] summary svg {
-  transform: rotate(180deg);
-}
-
-.avatar-zero-demo-link {
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin-top: 12px;
-  padding: 0 12px;
-  border: 1px solid #e7e0ff;
-  border-radius: 999px;
-  background: #f7f3ff;
-  color: #6840d6;
-  cursor: pointer;
-  font: 700 12px/1 var(--font-body);
-}
-
 .ratio-popover {
-  width: 142px;
+  width: 160px;
   display: grid;
   gap: 4px;
   padding: 10px 8px;
-  border-radius: 24px;
+  border-radius: 18px;
+  box-shadow: 0 8px 32px rgba(50, 74, 114, 0.12);
 }
 
 .ratio-option {
   width: 100%;
-  height: 38px;
+  height: 40px;
   display: grid;
   grid-template-columns: 28px 1fr;
   align-items: center;
   border: 0;
-  border-radius: 10px;
+  border-radius: 12px;
   background: transparent;
   color: #111;
   cursor: pointer;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 500;
   text-align: left;
+  transition: background 0.15s, color 0.15s;
 }
 
-.ratio-option.selected,
-.ratio-option:hover {
+.ratio-option.selected {
   background: #f2f2f2;
+  font-weight: 600;
+}
+
+.ratio-option:hover:not(.selected) {
+  background: #f8f8f8;
 }
 
 .ratio-option:focus-visible {
@@ -11594,9 +13682,9 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 10px;
   padding: 16px;
-  border: 1px solid #ececf0;
+  border: 1px solid var(--border);
   border-radius: 18px;
-  background: #fbfbfc;
+  background: var(--bg-1);
 }
 
 .recommendation-label {
@@ -11607,20 +13695,20 @@ onBeforeUnmount(() => {
 }
 
 .recommendation-label span {
-  color: #5b6067;
+  color: var(--text-2);
   font-size: 12px;
   font-weight: 700;
 }
 
 .recommendation-label em {
-  color: #7b5cff;
+  color: var(--accent-text, #7b5cff);
   font-size: 11px;
   font-style: normal;
   font-weight: 800;
 }
 
 .cinematic-recommendation-grid article > strong {
-  color: #111;
+  color: var(--text-0);
   font-size: 42px;
   line-height: 0.95;
   letter-spacing: -0.03em;
@@ -11629,17 +13717,29 @@ onBeforeUnmount(() => {
 .cinematic-recommendation-grid select {
   width: 100%;
   height: 36px;
-  padding: 0 10px;
-  border: 1px solid #e3e3e7;
-  border-radius: 10px;
-  background: #fff;
-  color: #111;
+  padding: 0 36px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-input);
+  color: var(--text-0);
   font: 600 12px/1 var(--font-body);
+  appearance: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238fa0b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+}
+.cinematic-recommendation-grid select:hover { border-color: var(--border-strong); }
+.cinematic-recommendation-grid select:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+  background-color: var(--bg-0);
 }
 
 .cinematic-recommendation-grid p,
 .cinematic-recommendation-grid small {
-  color: #858b93;
+  color: var(--text-3);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -12110,7 +14210,6 @@ onBeforeUnmount(() => {
   }
 
   .cinematic-setup-grid,
-  .cinematic-advanced-grid,
   .cinematic-recommendation-grid,
   .cinematic-review-detail-grid,
   .cinematic-quality-panel,
@@ -15895,4 +17994,558 @@ onBeforeUnmount(() => {
   color: #1f252a;
   white-space: nowrap;
 }
+
+/* ── Shared modal primitives ── */
+.modal-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 24px 24px 0; flex-shrink: 0;
+}
+.modal-head-row { align-items: center; }
+.modal-kicker {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--accent, #4c7dff); margin-bottom: 4px;
+}
+.modal-sub { font-size: var(--type-sm, 12px); color: var(--text-2, #60718a); margin-top: 4px; }
+.modal-close {
+  background: none; border: none; cursor: pointer; color: var(--text-2, #60718a);
+  padding: 4px; border-radius: var(--radius, 8px); transition: background 0.15s;
+}
+.modal-close:hover { background: var(--bg-hover, #f1f5fb); }
+.modal-footer {
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  padding: 16px 24px; border-top: 1px solid var(--border, #dbe4f0); flex-shrink: 0;
+}
+
+/* ── Production Dashboard ── */
+.production-dashboard-overlay { z-index: 200; }
+.production-dashboard-modal {
+  width: min(640px, calc(100vw - 40px)); max-height: calc(100vh - 48px);
+  background: var(--bg-0, #fff); border-radius: 12px;
+  box-shadow: var(--shadow-xl, 0 20px 44px rgba(50,74,114,0.16));
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.prod-dash-stages { padding: 0 24px; display: flex; flex-direction: column; gap: 2px; }
+.prod-dash-stage {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  border-radius: var(--radius, 8px); transition: background 0.15s;
+}
+.prod-dash-stage:hover { background: var(--bg-hover, #f1f5fb); }
+.prod-dash-stage-num {
+  width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; flex-shrink: 0;
+  background: var(--bg-2, #eef3f9); color: var(--text-2, #60718a);
+}
+.prod-dash-stage.is-complete .prod-dash-stage-num { background: var(--success-bg, rgba(63,138,99,0.1)); color: var(--success, #3f8a63); }
+.prod-dash-stage.is-in_progress .prod-dash-stage-num { background: var(--accent-bg, rgba(76,125,255,0.1)); color: var(--accent, #4c7dff); }
+.prod-dash-stage-info { flex: 1; min-width: 0; }
+.prod-dash-stage-info strong { display: block; font-size: var(--type-md, 13px); color: var(--text-0, #182132); }
+.prod-dash-stage-info span { font-size: var(--type-xs, 11px); color: var(--text-3, #8fa0b8); }
+.prod-dash-pill {
+  font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 99px; flex-shrink: 0;
+  background: var(--bg-2, #eef3f9); color: var(--text-2, #60718a);
+}
+.prod-dash-pill.is-complete { background: var(--success-bg, rgba(63,138,99,0.1)); color: var(--success, #3f8a63); }
+.prod-dash-pill.is-in_progress { background: var(--accent-bg, rgba(76,125,255,0.1)); color: var(--accent, #4c7dff); }
+.prod-dash-pill.is-needs_review { background: var(--warning-bg, rgba(166,123,45,0.1)); color: var(--warning, #a67b2d); }
+.prod-dash-pill.is-blocked, .prod-dash-pill.is-failed { background: var(--error-bg, rgba(210,79,102,0.1)); color: var(--error, #d24f66); }
+.prod-dash-pill.is-pending { background: var(--bg-2, #eef3f9); color: var(--text-3, #8fa0b8); }
+.prod-dash-estimate {
+  display: flex; gap: 0; margin: 16px 24px; padding: 14px 0;
+  border-top: 1px solid var(--border, #dbe4f0); border-bottom: 1px solid var(--border, #dbe4f0);
+}
+.prod-dash-estimate > div {
+  flex: 1; text-align: center; display: flex; flex-direction: column; gap: 2px;
+}
+.prod-dash-estimate strong { font-size: var(--type-lg, 16px); color: var(--text-0, #182132); }
+.prod-dash-estimate span { font-size: var(--type-xs, 11px); color: var(--text-3, #8fa0b8); }
+
+/* ── Export Modal ── */
+.export-overlay { z-index: 200; }
+.export-modal {
+  width: min(560px, calc(100vw - 40px)); max-height: calc(100vh - 48px);
+  background: var(--bg-0, #fff); border-radius: 12px;
+  box-shadow: var(--shadow-xl, 0 20px 44px rgba(50,74,114,0.16));
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.export-options { display: flex; gap: 10px; padding: 0 24px; }
+.export-option {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 18px 12px; border: 2px solid var(--border, #dbe4f0); border-radius: var(--radius, 8px);
+  background: var(--bg-1, #f8fbff); cursor: pointer; transition: all 0.18s var(--ease-out, cubic-bezier(0.16,1,0.3,1));
+  text-align: center;
+}
+.export-option:hover { border-color: var(--border-strong, #bcc9d9); transform: translateY(-1px); }
+.export-option.active { border-color: var(--accent, #4c7dff); background: var(--accent-bg, rgba(76,125,255,0.08)); box-shadow: 0 0 0 3px var(--accent-glow, rgba(76,125,255,0.2)); }
+.export-option strong { font-size: var(--type-md, 13px); color: var(--text-0, #182132); }
+.export-option span { font-size: var(--type-xs, 11px); color: var(--text-3, #8fa0b8); }
+.export-loading { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 32px 24px; color: var(--text-2, #60718a); }
+.export-preview { padding: 0 24px; }
+.export-preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.export-preview-header span { font-size: var(--type-sm, 12px); font-weight: 600; color: var(--text-2, #60718a); }
+.export-preview-content {
+  max-height: 240px; overflow-y: auto; padding: 12px; font-size: 11px; font-family: var(--font-mono, monospace);
+  background: var(--bg-2, #eef3f9); border-radius: var(--radius, 8px); color: var(--text-1, #2c3850);
+  white-space: pre-wrap; word-break: break-word; line-height: 1.5;
+}
+
+/* ── AI Studio Chat Home ── */
+.studio-chat-home {
+  width: min(720px, calc(100vw - 32px));
+  margin: 0 auto 16px;
+  border-radius: 28px;
+  background: #fff;
+  box-shadow: 0 18px 42px rgba(38, 44, 52, 0.08);
+  overflow: hidden;
+}
+.studio-chat-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 16px 18px; border-bottom: 1px solid #f0f1f2;
+}
+.studio-chat-head div { display: flex; flex-direction: column; gap: 3px; }
+.studio-chat-head span {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.12em; color: #8a8f95;
+}
+.studio-chat-head strong { font-size: 16px; color: #101010; }
+.studio-chat-log {
+  height: min(310px, 38vh); overflow-y: auto; padding: 18px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.studio-chat-empty {
+  min-height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  color: #9a9a9a; text-align: center;
+}
+.studio-chat-empty p { max-width: 420px; font-size: 13px; line-height: 1.5; }
+.studio-chat-actions {
+  display: flex; gap: 8px; flex-wrap: wrap; padding: 0 18px 14px;
+}
+.studio-chat-actions button {
+  height: 34px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid #e5e5e5;
+  border-radius: 999px; padding: 0 13px; background: #fff;
+  color: #111; font-size: 12px; font-weight: 650; cursor: pointer;
+}
+.studio-chat-actions button.primary {
+  min-width: 120px;
+  border-color: #050505;
+  background: #050505;
+  color: #fff;
+}
+.studio-chat-actions button:hover { background: #f6f6f6; }
+.studio-chat-actions button.primary:hover { background: #202020; }
+.studio-chat-input {
+  display: grid; grid-template-columns: 1fr 40px; gap: 10px; padding: 14px 18px 18px;
+  border-top: 1px solid #f0f1f2;
+}
+.studio-chat-input textarea {
+  min-height: 50px; resize: vertical; border: 1px solid #e5e5e5;
+  border-radius: 18px; padding: 11px 14px; background: #f8f8f8;
+  color: #151515; outline: none; font-size: 13px; line-height: 1.4;
+}
+.studio-chat-input textarea:focus { border-color: #c8c8c8; background: #fff; }
+.story-composer .composer-ai-chat {
+  width: 100%;
+  margin: 12px 0 0;
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(38, 44, 52, 0.06);
+}
+.story-composer .composer-ai-chat .studio-chat-log {
+  height: auto;
+  max-height: 250px;
+  min-height: 128px;
+}
+.story-composer .composer-ai-chat .studio-chat-empty {
+  min-height: 118px;
+}
+.agent-main .script-stage-chat {
+  width: min(912px, calc(100vw - 64px));
+  margin: 16px auto 0;
+  border-radius: 24px;
+}
+.agent-main .script-stage-chat .studio-chat-log {
+  height: auto;
+  max-height: 260px;
+  min-height: 132px;
+}
+.script-stage-chat-inline {
+  width: 100%;
+  margin: 26px 0 0;
+  border: 1px solid #eceef1;
+  box-shadow: none;
+}
+.script-stage-chat-inline .studio-chat-head {
+  padding: 12px 14px;
+}
+.script-stage-chat-inline .studio-chat-log {
+  min-height: 116px;
+  max-height: 220px;
+  padding: 14px;
+}
+.script-stage-chat-inline .studio-chat-empty {
+  min-height: 104px;
+}
+.script-stage-chat-inline .studio-chat-actions {
+  padding: 0 14px 12px;
+}
+.script-stage-chat-inline .studio-chat-input {
+  padding: 12px 14px 14px;
+}
+
+/* ── Canvas AI Assistant ── */
+.canvas-ai-assistant {
+  position: fixed; right: 22px; top: 86px;
+  width: 340px; max-height: calc(100vh - 116px); z-index: 38;
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid #dfe3e8; border-radius: 14px;
+  background: rgba(255, 255, 255, 0.97); color: #1f252a;
+  box-shadow: 0 18px 46px rgba(28, 35, 44, 0.16);
+}
+.canvas-ai-assistant.collapsed {
+  width: 48px; height: 48px; border-radius: 12px; align-items: center; justify-content: center;
+}
+.canvas-ai-collapse {
+  position: absolute; right: 10px; top: 10px; width: 30px; height: 30px;
+  border: 0; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  background: #f3f4f5; color: #20252b; cursor: pointer; z-index: 2;
+}
+.canvas-ai-assistant.collapsed .canvas-ai-collapse { position: static; }
+.canvas-ai-assistant header {
+  padding: 14px 52px 12px 14px; border-bottom: 1px solid #eef0f2;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.canvas-ai-assistant header span {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.12em; color: #8a8f95;
+}
+.canvas-ai-assistant header strong { display: block; font-size: 14px; color: #101010; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.canvas-ai-assistant header small { color: #7b848c; font-size: 11px; }
+.canvas-ai-messages {
+  flex: 1; min-height: 180px; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px;
+}
+.canvas-ai-empty {
+  min-height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; text-align: center; color: #8a8f95;
+}
+.canvas-ai-empty p { font-size: 12px; line-height: 1.45; }
+.canvas-ai-suggestions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px; }
+.canvas-ai-suggestions button {
+  border: 1px solid #e1e4e8; border-radius: 999px; padding: 6px 9px;
+  background: #fff; color: #24292f; font-size: 11px; cursor: pointer;
+}
+.canvas-ai-input {
+  display: grid; grid-template-columns: 1fr 36px; gap: 8px; padding: 12px;
+  border-top: 1px solid #eef0f2;
+}
+.canvas-ai-input textarea {
+  resize: none; min-height: 44px; max-height: 120px; border: 1px solid #e1e4e8;
+  border-radius: 12px; padding: 9px 10px; background: #f8f8f8;
+  color: #1f252a; outline: none; font-size: 12px; line-height: 1.35;
+}
+.canvas-ai-input textarea:focus { border-color: #c8c8c8; background: #fff; }
+
+/* ── Cinematic Chat ── */
+.cinematic-chat-overlay { z-index: 200; }
+.cinematic-chat-modal {
+  width: min(520px, calc(100vw - 40px)); height: min(600px, calc(100vh - 80px));
+  background: var(--bg-0, #fff); border-radius: 12px;
+  box-shadow: var(--shadow-xl, 0 20px 44px rgba(50,74,114,0.16));
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.chat-messages {
+  flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;
+}
+.chat-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; height: 100%; color: var(--text-3, #8fa0b8); }
+.chat-empty p { text-align: center; font-size: var(--type-sm, 12px); max-width: 280px; }
+.chat-msg { display: flex; gap: 10px; align-items: flex-start; }
+.chat-msg.is-user { flex-direction: row-reverse; }
+.chat-msg-avatar {
+  width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; flex-shrink: 0;
+  background: var(--bg-2, #eef3f9); color: var(--text-2, #60718a);
+}
+.chat-msg.is-user .chat-msg-avatar { background: var(--accent-bg, rgba(76,125,255,0.1)); color: var(--accent, #4c7dff); }
+.chat-msg-body {
+  max-width: 80%; padding: 10px 14px; border-radius: 12px;
+  background: var(--bg-1, #f8fbff); border: 1px solid var(--border, #dbe4f0);
+  font-size: var(--type-sm, 12px); color: var(--text-1, #2c3850); line-height: 1.5;
+}
+.chat-msg.is-user .chat-msg-body { background: var(--accent, #4c7dff); color: #fff; border-color: transparent; }
+.chat-msg-body p { margin: 0; }
+.chat-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chat-input {
+  display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border, #dbe4f0); flex-shrink: 0;
+}
+.chat-input .input { flex: 1; }
+
+/* ── Generation Queue ── */
+.generation-queue-overlay { z-index: 200; }
+.generation-queue-modal {
+  width: min(520px, calc(100vw - 40px)); max-height: calc(100vh - 48px);
+  background: var(--bg-0, #fff); border-radius: 12px;
+  box-shadow: var(--shadow-xl, 0 20px 44px rgba(50,74,114,0.16));
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.queue-list { padding: 0 24px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+.queue-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 40px 24px; color: var(--text-3, #8fa0b8); }
+.queue-item {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  border-radius: var(--radius, 8px); transition: background 0.15s;
+}
+.queue-item:hover { background: var(--bg-hover, #f1f5fb); }
+.queue-item-icon {
+  width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; flex-shrink: 0; background: var(--bg-2, #eef3f9); color: var(--text-3, #8fa0b8);
+}
+.queue-item.is-completed .queue-item-icon { background: var(--success-bg, rgba(63,138,99,0.1)); color: var(--success, #3f8a63); }
+.queue-item.is-generating .queue-item-icon { background: var(--accent-bg, rgba(76,125,255,0.1)); color: var(--accent, #4c7dff); }
+.queue-item.is-failed .queue-item-icon { background: var(--error-bg, rgba(210,79,102,0.1)); color: var(--error, #d24f66); }
+.queue-pending-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bg-3, #d7e0ec); }
+.queue-item-info { flex: 1; min-width: 0; }
+.queue-item-info strong { display: block; font-size: var(--type-md, 13px); color: var(--text-0, #182132); }
+.queue-item-info span { font-size: var(--type-xs, 11px); color: var(--text-3, #8fa0b8); }
+
+/* ── A/B Comparison ── */
+.ab-comparison-overlay { z-index: 200; }
+.ab-comparison-modal {
+  width: min(720px, calc(100vw - 40px)); max-height: calc(100vh - 48px);
+  background: var(--bg-0, #fff); border-radius: 12px;
+  box-shadow: var(--shadow-xl, 0 20px 44px rgba(50,74,114,0.16));
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.ab-loading, .ab-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 40px 24px; color: var(--text-3, #8fa0b8); }
+.ab-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; padding: 0 24px; overflow-y: auto; }
+.ab-card {
+  padding: 16px; border: 2px solid var(--border, #dbe4f0); border-radius: var(--radius, 8px);
+  cursor: pointer; transition: all 0.18s var(--ease-out, cubic-bezier(0.16,1,0.3,1));
+  display: flex; flex-direction: column; gap: 8px;
+}
+.ab-card:hover { border-color: var(--border-strong, #bcc9d9); transform: translateY(-1px); }
+.ab-card.selected { border-color: var(--accent, #4c7dff); background: var(--accent-bg, rgba(76,125,255,0.05)); box-shadow: 0 0 0 3px var(--accent-glow, rgba(76,125,255,0.2)); }
+.ab-card-head { display: flex; align-items: center; justify-content: space-between; }
+.ab-card-head strong { font-size: var(--type-md, 13px); color: var(--text-0, #182132); }
+.ab-card-prompt { font-size: var(--type-xs, 11px); color: var(--text-2, #60718a); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.ab-card-metrics { display: flex; gap: 12px; }
+.ab-card-metrics span { font-size: 10px; color: var(--text-3, #8fa0b8); }
+.ab-card-metrics strong { font-weight: 700; color: var(--text-1, #2c3850); }
+
+/* ── Version History ── */
+.version-history-overlay { z-index: 200; }
+.version-history-modal {
+  width: min(480px, calc(100vw - 40px)); max-height: calc(100vh - 48px);
+  background: var(--bg-0, #fff); border-radius: 12px;
+  box-shadow: var(--shadow-xl, 0 20px 44px rgba(50,74,114,0.16));
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.version-list { padding: 0 24px; display: flex; flex-direction: column; gap: 0; overflow-y: auto; }
+.version-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 40px 24px; color: var(--text-3, #8fa0b8); }
+.version-item {
+  display: flex; align-items: center; gap: 12px; padding: 12px 0;
+  border-bottom: 1px solid var(--border, #dbe4f0);
+}
+.version-item:last-child { border-bottom: none; }
+.version-item-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  background: var(--bg-3, #d7e0ec);
+}
+.version-item-dot.current { background: var(--success, #3f8a63); }
+.version-item-info { flex: 1; min-width: 0; }
+.version-item-info strong { display: block; font-size: var(--type-md, 13px); color: var(--text-0, #182132); }
+.version-item-info span { font-size: var(--type-xs, 11px); color: var(--text-3, #8fa0b8); }
+.version-item-info p { font-size: var(--type-xs, 11px); margin-top: 2px; }
+
+/* ── Production tools bar ── */
+.production-tools-bar { display: flex; gap: 4px; margin-right: 4px; }
+.production-tools-bar .round-control {
+  width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--radius, 8px); background: transparent; color: var(--text-2, #60718a);
+  cursor: pointer; transition: all 0.15s;
+}
+.production-tools-bar .round-control:hover { background: var(--bg-hover, #f1f5fb); color: var(--text-0, #182132); }
+
+/* ── Production Pipeline (Step 2) ── */
+.production-pipeline-row {
+  display: flex; gap: 6px; padding: 12px 0 16px; overflow-x: auto;
+}
+.pipeline-card-sm {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 20px; white-space: nowrap;
+  font-size: var(--type-xs, 11px); font-weight: 500; color: var(--text-2, #60718a);
+  background: var(--bg-2, #eef3f9); border: 1px solid transparent;
+  cursor: pointer; transition: all 0.18s var(--ease-out, cubic-bezier(0.16,1,0.3,1));
+}
+.pipeline-card-sm:hover { background: var(--bg-1, #f8fbff); border-color: var(--border-strong, #bcc9d9); transform: translateY(-1px); }
+.pipeline-card-sm.done { background: rgba(63,138,99,0.1); color: var(--success, #3f8a63); border-color: rgba(63,138,99,0.25); }
+
+/* ── Storyboard Viewer ── */
+.storyboard-viewer-overlay { z-index: 200; }
+.storyboard-viewer-modal {
+  width: min(900px, calc(100vw - 40px)); max-height: calc(100vh - 48px);
+  background: var(--bg-0, #fff); border-radius: 12px;
+  box-shadow: var(--shadow-xl, 0 20px 44px rgba(50,74,114,0.16));
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.sb-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 48px 24px; color: var(--text-3, #8fa0b8); }
+.sb-empty p { font-size: var(--type-sm, 12px); text-align: center; max-width: 300px; }
+.sb-content { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.sb-parts-nav {
+  width: 180px; flex-shrink: 0; overflow-y: auto; padding: 8px;
+  border-right: 1px solid var(--border, #dbe4f0);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.sb-part-tab {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border: none; border-radius: var(--radius, 8px); background: transparent;
+  cursor: pointer; text-align: left; transition: background 0.15s;
+}
+.sb-part-tab:hover { background: var(--bg-hover, #f1f5fb); }
+.sb-part-tab.active { background: var(--accent-bg, rgba(76,125,255,0.1)); }
+.sb-part-num {
+  width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; background: var(--bg-2, #eef3f9); color: var(--text-2, #60718a);
+  flex-shrink: 0;
+}
+.sb-part-tab.active .sb-part-num { background: var(--accent, #4c7dff); color: #fff; }
+.sb-part-label { font-size: var(--type-sm, 12px); color: var(--text-1, #2c3850); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-part-detail { flex: 1; overflow-y: auto; padding: 16px 20px; }
+.sb-part-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.sb-part-meta span { font-size: var(--type-xs, 11px); color: var(--text-2, #60718a); }
+.sb-part-summary { font-size: var(--type-sm, 12px); color: var(--text-2, #60718a); margin-bottom: 16px; line-height: 1.5; }
+.sb-panels-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.sb-panel-card {
+  border: 1px solid var(--border, #dbe4f0); border-radius: var(--radius, 8px);
+  padding: 14px; cursor: pointer; transition: all 0.18s var(--ease-out, cubic-bezier(0.16,1,0.3,1));
+  display: flex; flex-direction: column; gap: 8px;
+}
+.sb-panel-card:hover { border-color: var(--border-strong, #bcc9d9); transform: translateY(-1px); box-shadow: var(--shadow-sm, 0 3px 10px rgba(50,74,114,0.08)); }
+.sb-panel-card.selected { border-color: var(--accent, #4c7dff); box-shadow: 0 0 0 2px var(--accent-glow, rgba(76,125,255,0.2)); }
+.sb-panel-header { display: flex; align-items: center; justify-content: space-between; }
+.sb-panel-num { font-size: var(--type-md, 13px); font-weight: 700; color: var(--text-0, #182132); }
+.sb-panel-timecode { font-size: 10px; color: var(--text-3, #8fa0b8); }
+.sb-panel-caption { font-size: var(--type-xs, 11px); color: var(--text-2, #60718a); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sb-panel-prompts details { margin-top: 4px; }
+.sb-panel-prompts summary { font-size: 10px; font-weight: 600; color: var(--text-3, #8fa0b8); cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em; }
+.sb-panel-prompts p { font-size: 10px; color: var(--text-2, #60718a); margin-top: 4px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.sb-panel-quality { display: flex; align-items: center; gap: 6px; }
+.sb-panel-actions { display: flex; gap: 6px; margin-top: auto; }
+
+/* ── Panel Refinement ── */
+.panel-refinement-overlay { z-index: 210; }
+.panel-refinement-modal {
+  width: min(600px, calc(100vw - 40px)); max-height: calc(100vh - 48px);
+  background: var(--bg-0, #fff); border-radius: 12px;
+  box-shadow: var(--shadow-xl, 0 20px 44px rgba(50,74,114,0.16));
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.refine-body { padding: 0 24px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; flex: 1; }
+.refine-row { display: flex; gap: 12px; }
+.refine-loading { display: flex; align-items: center; gap: 8px; padding: 12px 0; color: var(--text-2, #60718a); font-size: var(--type-sm, 12px); }
+.refine-result { display: flex; flex-direction: column; gap: 12px; }
+.refine-result-header { display: flex; align-items: center; justify-content: space-between; }
+.refine-adapters { margin-top: 8px; }
+.refine-adapters summary { font-size: var(--type-sm, 12px); font-weight: 600; color: var(--text-2, #60718a); cursor: pointer; }
+.refine-adapter { padding: 10px 0; border-bottom: 1px solid var(--border, #dbe4f0); }
+.refine-adapter:last-child { border-bottom: none; }
+.refine-adapter strong { font-size: var(--type-md, 13px); color: var(--text-0, #182132); }
+.refine-adapter p { font-size: var(--type-xs, 11px); color: var(--text-2, #60718a); margin-top: 4px; line-height: 1.4; }
+.refine-adapter .dim { font-size: 10px; }
+
+/* ── Visual Bible ── */
+.visual-bible-overlay { z-index: 200; }
+.visual-bible-modal {
+  width: min(680px, calc(100vw - 40px)); max-height: calc(100vh - 48px);
+  background: var(--bg-0, #fff); border-radius: 12px;
+  box-shadow: var(--shadow-xl, 0 20px 44px rgba(50,74,114,0.16));
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.vb-empty, .ds-empty, .imp-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 48px 24px; color: var(--text-3, #8fa0b8); }
+.vb-empty p, .ds-empty p, .imp-empty p { font-size: var(--type-sm, 12px); text-align: center; max-width: 300px; }
+.vb-body, .ds-body { padding: 0 24px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 20px; }
+.vb-section { display: flex; flex-direction: column; gap: 8px; }
+.vb-section-kicker {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--accent, #4c7dff);
+}
+.vb-section p { font-size: var(--type-sm, 12px); color: var(--text-1, #2c3850); line-height: 1.6; }
+.vb-characters-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.vb-character-card {
+  padding: 12px; border: 1px solid var(--border, #dbe4f0); border-radius: var(--radius, 8px);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.vb-character-card strong { font-size: var(--type-md, 13px); color: var(--text-0, #182132); }
+.vb-character-card p { font-size: var(--type-xs, 11px); color: var(--text-2, #60718a); line-height: 1.4; }
+.vb-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.vb-palette { display: flex; gap: 6px; flex-wrap: wrap; }
+.vb-color-swatch {
+  width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--border, #dbe4f0);
+  cursor: default; transition: transform 0.15s;
+}
+.vb-color-swatch:hover { transform: scale(1.15); }
+.vb-rules { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.vb-rules li {
+  font-size: var(--type-sm, 12px); color: var(--text-1, #2c3850); padding: 8px 12px;
+  background: var(--bg-1, #f8fbff); border-radius: var(--radius, 8px);
+  border-left: 3px solid var(--accent, #4c7dff);
+}
+
+/* ── Design Sheet ── */
+.design-sheet-overlay { z-index: 200; }
+.design-sheet-modal {
+  width: min(640px, calc(100vw - 40px)); max-height: calc(100vh - 48px);
+  background: var(--bg-0, #fff); border-radius: 12px;
+  box-shadow: var(--shadow-xl, 0 20px 44px rgba(50,74,114,0.16));
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.ds-section { display: flex; flex-direction: column; gap: 8px; }
+.ds-prompt {
+  max-height: 200px; overflow-y: auto; padding: 12px; font-size: 11px;
+  font-family: var(--font-mono, monospace); background: var(--bg-2, #eef3f9);
+  border-radius: var(--radius, 8px); color: var(--text-1, #2c3850);
+  white-space: pre-wrap; word-break: break-word; line-height: 1.5;
+}
+.ds-adapters { display: flex; flex-direction: column; gap: 8px; }
+.ds-adapter-card {
+  padding: 12px; border: 1px solid var(--border, #dbe4f0); border-radius: var(--radius, 8px);
+}
+.ds-adapter-card strong { font-size: var(--type-md, 13px); color: var(--text-0, #182132); }
+.ds-adapter-card p { font-size: var(--type-xs, 11px); color: var(--text-2, #60718a); margin-top: 4px; line-height: 1.4; }
+
+/* ── Narrative Templates ── */
+.narrative-templates-overlay { z-index: 200; }
+.narrative-templates-modal {
+  width: min(640px, calc(100vw - 40px)); max-height: calc(100vh - 48px);
+  background: var(--bg-0, #fff); border-radius: 12px;
+  box-shadow: var(--shadow-xl, 0 20px 44px rgba(50,74,114,0.16));
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.nt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; padding: 0 24px; }
+.nt-card {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px 12px;
+  border: 2px solid var(--border, #dbe4f0); border-radius: var(--radius, 8px);
+  background: var(--bg-1, #f8fbff); cursor: pointer; text-align: center;
+  transition: all 0.18s var(--ease-out, cubic-bezier(0.16,1,0.3,1));
+}
+.nt-card:hover { border-color: var(--border-strong, #bcc9d9); transform: translateY(-1px); }
+.nt-card.selected { border-color: var(--accent, #4c7dff); background: var(--accent-bg, rgba(76,125,255,0.05)); box-shadow: 0 0 0 3px var(--accent-glow, rgba(76,125,255,0.2)); }
+.nt-card-icon { color: var(--accent, #4c7dff); }
+.nt-card strong { font-size: var(--type-md, 13px); color: var(--text-0, #182132); }
+.nt-card span { font-size: var(--type-xs, 11px); color: var(--text-3, #8fa0b8); }
+.nt-preview { padding: 16px 24px; }
+.nt-details { display: flex; gap: 16px; margin-top: 8px; flex-wrap: wrap; }
+.nt-details span { font-size: var(--type-sm, 12px); color: var(--text-2, #60718a); }
+
+/* ── Improvements ── */
+.improvements-overlay { z-index: 200; }
+.improvements-modal {
+  width: min(560px, calc(100vw - 40px)); max-height: calc(100vh - 48px);
+  background: var(--bg-0, #fff); border-radius: 12px;
+  box-shadow: var(--shadow-xl, 0 20px 44px rgba(50,74,114,0.16));
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.imp-list { padding: 0 24px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.imp-card {
+  padding: 14px; border: 1px solid var(--border, #dbe4f0); border-radius: var(--radius, 8px);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.imp-card-head { display: flex; align-items: center; gap: 8px; }
+.imp-card-head strong { font-size: var(--type-md, 13px); color: var(--text-0, #182132); }
+.imp-card p { font-size: var(--type-sm, 12px); color: var(--text-2, #60718a); line-height: 1.5; }
 </style>
+
+

@@ -29,6 +29,12 @@ type CinematicProductionStateInput = {
   quality_preview?: any
   selection?: any
   generation_queue?: any[]
+  chat_summary?: any
+  conversation_state?: any
+  canvas_layout?: any
+  selected_context?: any
+  final_canvas_ready?: boolean
+  last_ai_actions?: any[]
   model?: string
 }
 
@@ -176,6 +182,12 @@ export function saveCinematicProductionState(dramaId: number, input: CinematicPr
     quality_preview: input.quality_preview ?? existing.quality_preview ?? null,
     selection: input.selection ?? existing.selection ?? null,
     generation_queue: input.generation_queue ?? input.plan?.generation_queue ?? existing.generation_queue ?? [],
+    chat_summary: input.chat_summary ?? existing.chat_summary ?? null,
+    conversation_state: input.conversation_state ?? existing.conversation_state ?? null,
+    canvas_layout: input.canvas_layout ?? existing.canvas_layout ?? null,
+    selected_context: input.selected_context ?? existing.selected_context ?? null,
+    final_canvas_ready: input.final_canvas_ready ?? existing.final_canvas_ready ?? false,
+    last_ai_actions: input.last_ai_actions ?? existing.last_ai_actions ?? [],
     approvals: existing.approvals || {},
     saved_at: ts,
     version_history: compactHistory(existing.version_history, {

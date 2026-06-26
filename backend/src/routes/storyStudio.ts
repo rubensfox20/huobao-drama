@@ -152,9 +152,16 @@ const improveProjectRequestSchema = z.object({
 })
 
 const cinemaChatRequestSchema = z.object({
+  drama_id: z.coerce.number().int().positive().optional(),
+  session_id: z.string().trim().optional(),
   message: z.string().trim().min(1).max(20_000),
+  mode: z.enum(['studio_chat', 'canvas_chat']).optional().default('studio_chat'),
+  current_focus: z.any().optional(),
+  selected_canvas_item: z.any().optional(),
+  current_state: z.any().optional(),
   plan: z.any().optional(),
   brief: cinematicBriefSchema.optional(),
+  context: z.any().optional(),
 })
 
 const exportPackageRequestSchema = z.object({
@@ -172,6 +179,12 @@ const productionStateSaveSchema = z.object({
   quality_preview: z.any().optional(),
   selection: z.any().optional(),
   generation_queue: z.array(z.any()).optional(),
+  chat_summary: z.any().optional(),
+  conversation_state: z.any().optional(),
+  canvas_layout: z.any().optional(),
+  selected_context: z.any().optional(),
+  final_canvas_ready: z.boolean().optional(),
+  last_ai_actions: z.array(z.any()).optional(),
   model: z.string().trim().optional(),
 })
 
@@ -546,36 +559,117 @@ app.post('/cinema-chat', async (c) => {
   const parsed = await parseJsonBody(c, cinemaChatRequestSchema)
   if (!parsed.ok) return parsed.response
   const input = parsed.data
-  const allowed = /(roteiro|drama|cinema|cinematic|storyboard|prompt|cena|personagem|episodio|temporada|visual|imagem|video|direcao|continuidade|asset|producao|frame|painel|design sheet|biblia)/i
+  const plan = input.plan || input.context?.plan || input.current_state?.plan || {}
+  const brief = input.brief || input.context?.brief || input.current_state?.brief || null
+  const selectedCanvasItem = input.selected_canvas_item || null
+  const allowed = /(roteiro|drama|cinema|cinematic|storyboard|prompt|cena|personagem|episodio|episódio|temporada|visual|imagem|video|vídeo|direcao|direção|continuidade|asset|ativo|producao|produção|frame|painel|design sheet|biblia|bíblia|canvas|kling|runway|veo|sora|flux|wan)/i
   if (!allowed.test(input.message)) {
+    const limitedMessage = 'Posso ajudar apenas com roteiro, drama, cinema, storyboard, prompts, continuidade, imagens, video, canvas e producao do projeto.'
     return success(c, {
-      response: 'Posso ajudar apenas com roteiro, drama, cinema, storyboard, prompts, continuidade, imagens, video e producao do projeto.',
+      assistant_message: limitedMessage,
+      response: limitedMessage,
+      state_patch: {},
+      canvas_patch: {},
+      proposed_actions: [],
       actions: [],
+      needs_approval: false,
+      warnings: [],
+      next_questions: [],
       limited: true,
     })
   }
 
-  let response = 'Analisei dentro do dominio cinematografico. Recomendo revisar a biblia visual, validar continuidade e manter prompts finais em camadas antes de gerar imagens.'
+  const isCanvasMode = input.mode === 'canvas_chat'
+  const finalCanvasReady = Boolean(input.current_state?.final_canvas_ready || input.current_state?.production_assets_ready || plan?.storyboard_package || input.current_state?.storyboard_package)
+  const proposedActions = isCanvasMode
+    ? ['refine_selected_panel', 'validate_prompts', 'review_visual_bible']
+    : ['generate_script', 'create_season', 'build_storyboard', ...(finalCanvasReady ? ['open_canvas'] : [])]
+  const selectedLabel = selectedCanvasItem?.label || selectedCanvasItem?.name || selectedCanvasItem?.title || selectedCanvasItem?.type || ''
+  const focusText = selectedLabel ? `\n\nITEM SELECIONADO NO CANVAS:\n${JSON.stringify(selectedCanvasItem, null, 2).slice(0, 4000)}` : ''
+  const modeInstruction = isCanvasMode
+    ? 'You are assisting inside the final production canvas. Use the selected canvas item as context and suggest precise edits or safe actions.'
+    : 'You are the main AI studio chat. Guide the user from idea to screenplay, seasons, episodes, visual bible, storyboard and final canvas.'
+  let assistantMessage = isCanvasMode
+    ? `Posso ajudar nesse item${selectedLabel ? ` (${selectedLabel})` : ''}: revisar continuidade, melhorar prompt, reorganizar episodio ou preparar uma variação.`
+    : 'Posso conduzir o projeto por chat: roteiro, temporadas, episodios, biblia visual, storyboard, prompts e abertura do canvas final.'
   let aiWarning = ''
   try {
     const generated = await generateTextCompletion({
       operation: 'story-studio-cinema-chat',
       temperature: 0.4,
       system: [
+        modeInstruction,
         'You are a limited cinematic studio assistant.',
         'Only answer about screenplay, drama, cinema, storyboard, visual continuity, image/video prompts, production assets and exports.',
+        'When a major overwrite or regeneration is implied, say that it should require user approval before applying.',
         'If the user asks unrelated tasks, refuse briefly and redirect to the production workflow.',
       ].join('\n'),
-      prompt: `MESSAGE:\n${input.message}\n\nPLAN:\n${JSON.stringify(input.plan || {}).slice(0, 10_000)}`,
+      prompt: [
+        `MODE: ${input.mode}`,
+        `SESSION: ${input.session_id || 'default'}`,
+        `MESSAGE:\n${input.message}`,
+        focusText,
+        `\nBRIEF:\n${JSON.stringify(brief || {}).slice(0, 5000)}`,
+        `\nPLAN:\n${JSON.stringify(plan || {}).slice(0, 10_000)}`,
+      ].join('\n'),
     })
-    response = generated.text
+    assistantMessage = generated.text
   } catch (error) {
     aiWarning = error instanceof Error ? error.message : 'AI chat unavailable; local response was used.'
   }
 
+  const needsApproval = /(refaça|refaca|regener|sobrescrev|substitu|delete|apague|remova|organize a temporada|criar temporada|gerar roteiro|montar storyboard)/i.test(input.message)
+  const statePatch = {
+    chat_summary: {
+      last_message: input.message,
+      last_response: assistantMessage.slice(0, 800),
+      mode: input.mode,
+      session_id: input.session_id || 'default',
+      updated_at: new Date().toISOString(),
+    },
+    conversation_state: {
+      mode: input.mode,
+      current_focus: input.current_focus || null,
+      selected_canvas_item: selectedCanvasItem,
+    },
+    selected_context: selectedCanvasItem,
+    final_canvas_ready: finalCanvasReady,
+    last_ai_actions: proposedActions,
+  }
+  const canvasPatch = isCanvasMode
+    ? {
+      selected_item: selectedCanvasItem,
+      suggested_focus: selectedCanvasItem?.type || input.current_focus || 'project',
+      assistant_available: true,
+    }
+    : {
+      assistant_available: true,
+      open_when_ready: proposedActions.includes('open_canvas'),
+    }
+
+  if (input.drama_id) {
+    try {
+      saveCinematicProductionState(input.drama_id, {
+        ...(input.current_state || {}),
+        plan,
+        brief,
+        ...statePatch,
+      })
+    } catch (error) {
+      aiWarning = aiWarning || (error instanceof Error ? error.message : 'Production state was not saved.')
+    }
+  }
+
   return success(c, {
-    response,
-    actions: ['review_visual_bible', 'validate_prompts', 'refine_selected_panel'],
+    assistant_message: assistantMessage,
+    response: assistantMessage,
+    state_patch: statePatch,
+    canvas_patch: canvasPatch,
+    proposed_actions: proposedActions,
+    actions: proposedActions,
+    needs_approval: needsApproval,
+    warnings: aiWarning ? [aiWarning] : [],
+    next_questions: needsApproval ? ['Confirme antes de aplicar essa mudanca ao projeto.'] : [],
     limited: true,
     ai_warning: aiWarning || null,
   })

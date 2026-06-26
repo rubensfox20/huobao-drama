@@ -1176,13 +1176,13 @@
         </section>
       </main>
 
-      <div v-if="!productionAnalysisGenerating && !productionAssetsReady && !episodeStageOpen" class="agent-status-bar" :class="{ 'episodes-ready': episodeOutlinesReady && !episodeScriptsGenerating && !showScriptChatView, 'chat-mode': showScriptChatView }">
-        <template v-if="showScriptChatView">
+      <div v-if="!productionAnalysisGenerating && !productionAssetsReady && !episodeStageOpen" class="agent-status-bar" :class="{ 'episodes-ready': episodeOutlinesReady && !episodeScriptsGenerating && !showStickyScriptChat, 'chat-mode': showStickyScriptChat }">
+        <template v-if="showStickyScriptChat">
           <span class="agent-bot-dot"><WandSparkles :size="15" /></span>
-          <form v-if="chatFlowStep === 'ask_episodes'" class="agent-status-chat episode-selector">
+          <form v-if="stickyChatFlowStep === CHAT_FLOW_STEPS.ASK_EPISODES" class="agent-status-chat episode-selector">
             <div class="episode-selector-body">
               <div class="episode-selector-top">
-                <span class="episode-selector-label">Episodios</span>
+                <span class="episode-selector-label next-step-question">Quantos episódios deseja gerar?</span>
                 <div class="episode-selector-chips">
                   <button v-for="n in [6,7,8,9,10]" :key="n" type="button" class="episode-chip" @click="processEpisodeSelection(n)">{{ n }}</button>
                   <button type="button" class="episode-chip is-manual" :class="{ active: episodeSelectorManual }" @click="episodeSelectorManual = !episodeSelectorManual">Manual</button>
@@ -1197,13 +1197,13 @@
               <ArrowUp v-else :size="14" />
             </button>
           </form>
-          <div v-else-if="chatFlowStep === 'ask_continue'" class="agent-status-chat next-step-selector">
+          <div v-else-if="stickyChatFlowStep === CHAT_FLOW_STEPS.ASK_CONTINUE" class="agent-status-chat next-step-selector">
             <div class="episode-selector-body">
               <div class="episode-selector-top">
-                <span class="episode-selector-label">Proximo passo</span>
+                <span class="episode-selector-label next-step-question">Deseja continuar para gerar os roteiros dos episódios e os ativos de produção?</span>
                 <div class="episode-selector-chips">
-                  <button type="button" class="episode-chip" :class="{ active: nextStepManualActive === false && nextStepManualText === '' }" @click="handleNextStepChoice('sim')">Sim</button>
-                  <button type="button" class="episode-chip" :class="{ active: nextStepManualActive === false && nextStepManualText === '__no__' }" @click="handleNextStepChoice('nao')">Nao</button>
+                  <button type="button" class="episode-chip next-step-chip" @click="handleNextStepChoice('continuar')">Continuar</button>
+                  <button type="button" class="episode-chip next-step-chip" @click="handleNextStepChoice('cancelar')">Cancelar</button>
                   <button type="button" class="episode-chip is-manual" :class="{ active: nextStepManualActive }" @click="nextStepManualActive = !nextStepManualActive; nextStepManualText = ''">Manual</button>
                 </div>
               </div>
@@ -1211,13 +1211,13 @@
                 <input v-model="nextStepManualText" type="text" placeholder="Escreva sua instrucao..." @keydown.enter.prevent="handleNextStepChoice('manual')" />
               </div>
             </div>
-            <button type="button" class="episode-selector-send" aria-label="Enviar" :disabled="isNextStepSendDisabled" @click="handleNextStepChoice(nextStepManualActive ? 'manual' : (nextStepManualText === '__no__' ? 'nao' : 'sim'))">
+            <button v-if="nextStepManualActive" type="button" class="episode-selector-send" aria-label="Enviar" :disabled="isNextStepSendDisabled" @click="handleNextStepChoice('manual')">
               <LoaderCircle v-if="chatLoading" :size="14" class="animate-spin" />
               <ArrowUp v-else :size="14" />
             </button>
           </div>
           <form v-else class="agent-status-chat" @submit.prevent="sendScriptChat">
-            <input v-model="chatInput" type="text" placeholder="Peca ajustes para a IA antes dos episodios..." :disabled="chatLoading" />
+            <input v-model="chatInput" type="text" :placeholder="chatLoading ? 'Gerando próxima etapa...' : 'Peca ajustes para a IA antes dos episodios...'" :disabled="chatLoading" />
             <button type="submit" aria-label="Enviar mensagem" :disabled="!chatInput.trim() || chatLoading">
               <LoaderCircle v-if="chatLoading" :size="14" class="animate-spin" />
               <ArrowUp v-else :size="14" />
@@ -2800,6 +2800,14 @@ function loadChatFlowStep() {
   if (!import.meta.client) return CHAT_FLOW_STEPS.IDLE
   try { return sessionStorage.getItem(CHAT_FLOW_STORAGE_KEY + '_step') || CHAT_FLOW_STEPS.IDLE } catch { return CHAT_FLOW_STEPS.IDLE }
 }
+function saveChatFlowStep(step) {
+  if (!import.meta.client) return
+  try { sessionStorage.setItem(CHAT_FLOW_STORAGE_KEY + '_step', step) } catch {}
+}
+function setChatFlowStep(step) {
+  chatFlowStep.value = step
+  saveChatFlowStep(step)
+}
 const chatFlowMessages = ref(loadChatFlowMessages())
 const chatFlowStep = ref(loadChatFlowStep())
 watch([chatFlowMessages, chatFlowStep], ([msgs, step]) => {
@@ -3188,6 +3196,8 @@ const showScriptChatView = computed(() =>
   && !productionAssetsReady.value
   && !episodeStageOpen.value,
 )
+const stickyChatFlowStep = computed(() => chatFlowStep.value)
+const showStickyScriptChat = computed(() => showScriptChatView.value || stickyChatFlowStep.value !== CHAT_FLOW_STEPS.IDLE)
 const scriptGenerationSteps = computed(() => [
   { key: 'project', label: 'Criar projeto', status: currentProjectId.value ? 'done' : scriptGenerating.value ? 'running' : 'pending' },
   { key: 'idea', label: 'Ler ideia original', status: scriptDraft.value.idea ? 'done' : 'pending' },
@@ -4322,9 +4332,9 @@ async function startScriptGeneration(text) {
       const seasonCount = cinematicConfig.seasons || 1
       if (seasonCount > 1) {
         chatFlowMessages.value.push({ role: 'assistant', text: `Quantas temporadas? (configurado: ${seasonCount})\nResponda com um número.` })
-chatFlowStep.value = CHAT_FLOW_STEPS.ASK_SEASONS
+setChatFlowStep(CHAT_FLOW_STEPS.ASK_SEASONS)
       } else {
-        chatFlowStep.value = CHAT_FLOW_STEPS.ASK_EPISODES
+        setChatFlowStep(CHAT_FLOW_STEPS.ASK_EPISODES)
       }
       scrollChatLogs()
     }
@@ -4478,6 +4488,7 @@ function serializedAgentMetadata(stage = currentAgentStage.value) {
     agent_version: 1,
     generation_key: scriptGenerationKey(),
     stage,
+    chat_flow_step: chatFlowStep.value,
     cinematic_production: cinematicProductionMetadata(stage),
     cinematic_config: { ...cinematicConfig },
     cinematic_plan: cinematicPlan.value,
@@ -8645,12 +8656,21 @@ function hydrateExistingProject(project) {
     allEpisodeScriptsExpanded.value = false
     closeFloatingMenus()
 
+    const savedChatFlowStep = Object.values(CHAT_FLOW_STEPS).includes(savedAgent.chat_flow_step)
+      ? savedAgent.chat_flow_step
+      : ''
+    if (savedChatFlowStep) {
+      setChatFlowStep(savedChatFlowStep)
+    } else if (restoredStage === 'summary_ready' && savedEpisodes.length) {
+      setChatFlowStep(CHAT_FLOW_STEPS.ASK_CONTINUE)
+    }
+
     if (restoredStage === 'summary_ready' && chatFlowStep.value === CHAT_FLOW_STEPS.GENERATING_SUMMARY) {
       const seasonCount = Number(scriptDraft.value.seasons) || Number(cinematicConfig.seasons) || 1
       if (seasonCount > 1) {
-        chatFlowStep.value = CHAT_FLOW_STEPS.ASK_SEASONS
+        setChatFlowStep(CHAT_FLOW_STEPS.ASK_SEASONS)
       } else {
-        chatFlowStep.value = CHAT_FLOW_STEPS.ASK_EPISODES
+        setChatFlowStep(CHAT_FLOW_STEPS.ASK_EPISODES)
       }
       const hasSummaryMsg = chatFlowMessages.value.some(m => m.role === 'assistant' && m.text.includes(scriptDraft.value.title || 'AI Generated Script'))
       if (!hasSummaryMsg) {
@@ -8734,9 +8754,9 @@ function hydrateExistingProject(project) {
   if (chatFlowStep.value === CHAT_FLOW_STEPS.GENERATING_SUMMARY) {
     const seasonCount = Number(scriptDraft.value.seasons) || Number(cinematicConfig.seasons) || 1
     if (seasonCount > 1) {
-        chatFlowStep.value = CHAT_FLOW_STEPS.ASK_SEASONS
+        setChatFlowStep(CHAT_FLOW_STEPS.ASK_SEASONS)
       } else {
-        chatFlowStep.value = CHAT_FLOW_STEPS.ASK_EPISODES
+        setChatFlowStep(CHAT_FLOW_STEPS.ASK_EPISODES)
     }
     const hasSummaryMsg = chatFlowMessages.value.some(m => m.role === 'assistant' && m.text.includes(scriptDraft.value.title || 'AI Generated Script'))
     if (!hasSummaryMsg) {
@@ -9267,20 +9287,25 @@ function handleNextStepChoice(choice) {
     const text = nextStepManualText.value.trim()
     if (!text) return
     chatFlowMessages.value.push({ role: 'user', text })
-    chatFlowStep.value = CHAT_FLOW_STEPS.IDLE
+    nextStepManualActive.value = false
+    nextStepManualText.value = ''
+    setChatFlowStep(CHAT_FLOW_STEPS.IDLE)
     sendScriptChatWith(text)
     return
   }
-  if (choice === 'sim') {
-    chatFlowMessages.value.push({ role: 'user', text: 'Sim' })
-    chatFlowStep.value = CHAT_FLOW_STEPS.IDLE
+  if (choice === 'continuar') {
+    chatFlowMessages.value.push({ role: 'user', text: 'Continuar' })
+    nextStepManualActive.value = false
+    nextStepManualText.value = ''
     continueGeneratedScript()
     return
   }
-  if (choice === 'nao') {
-    chatFlowMessages.value.push({ role: 'user', text: 'Nao' })
+  if (choice === 'cancelar') {
+    chatFlowMessages.value.push({ role: 'user', text: 'Cancelar' })
     chatFlowMessages.value.push({ role: 'assistant', text: 'Certo! Continue ajustando o roteiro. Quando quiser avancar, e so me avisar.' })
-    chatFlowStep.value = CHAT_FLOW_STEPS.IDLE
+    nextStepManualActive.value = false
+    nextStepManualText.value = ''
+    setChatFlowStep(CHAT_FLOW_STEPS.IDLE)
     scrollChatLogs()
     return
   }
@@ -9413,7 +9438,7 @@ function createScriptFromHomeChat() {
   }
   aiPrompt.value = text
   chatInput.value = ''
-  chatFlowStep.value = CHAT_FLOW_STEPS.GENERATING_SUMMARY
+  setChatFlowStep(CHAT_FLOW_STEPS.GENERATING_SUMMARY)
   chatFlowMessages.value = [{ role: 'user', text }]
   startScriptGeneration(text)
 }
@@ -9429,13 +9454,13 @@ function processChatFlowInput(text) {
   if (chatFlowStep.value === CHAT_FLOW_STEPS.ASK_SEASONS) {
     const seasons = Math.max(1, Math.min(20, Number(trimmed) || 1))
     cinematicConfig.seasons = seasons
-    chatFlowStep.value = CHAT_FLOW_STEPS.GENERATING_SEASONS
+    setChatFlowStep(CHAT_FLOW_STEPS.GENERATING_SEASONS)
     generateSeasonsFromChat(seasons)
   } else if (chatFlowStep.value === CHAT_FLOW_STEPS.ASK_EPISODES) {
     const episodes = Math.max(1, Math.min(999, Number(trimmed) || 1))
     cinematicConfig.episodesPerSeason = episodes
     syncCinematicEpisodeTotal()
-    chatFlowStep.value = CHAT_FLOW_STEPS.GENERATING_EPISODES
+    setChatFlowStep(CHAT_FLOW_STEPS.GENERATING_EPISODES)
     generateEpisodesFromChat(episodes)
   } else {
     chatLoading.value = false
@@ -9461,10 +9486,10 @@ async function generateSeasonsFromChat(seasonCount) {
       : seasonSummaries.map(s => `**Temporada ${s.number}** — ${s.summary}`).join('\n\n')
     chatFlowMessages.value.push({ role: 'assistant', text: msg })
     chatFlowMessages.value.push({ role: 'assistant', text: `Quantos episódios por temporada? (Total de ${cinematicTotalEpisodes.value} episódios)` })
-    chatFlowStep.value = CHAT_FLOW_STEPS.ASK_EPISODES
+    setChatFlowStep(CHAT_FLOW_STEPS.ASK_EPISODES)
   } catch (error) {
     chatFlowMessages.value.push({ role: 'assistant', text: 'Erro ao gerar temporadas. Tente novamente.' })
-    chatFlowStep.value = CHAT_FLOW_STEPS.ASK_SEASONS
+    setChatFlowStep(CHAT_FLOW_STEPS.ASK_SEASONS)
   } finally {
     chatLoading.value = false
     scrollChatLogs()
@@ -9494,13 +9519,13 @@ async function generateEpisodesFromChat(episodesPerSeason) {
     const epList = episodes.slice(0, 6).map(e => `**${e.id}.** ${e.title}`).join('\n')
     const moreText = episodes.length > 6 ? `\n\n... e mais ${episodes.length - 6} episódios.` : ''
     chatFlowMessages.value.push({ role: 'assistant', text: `${total} episódios criados:\n\n${epList}${moreText}` })
-    chatFlowMessages.value.push({ role: 'assistant', text: 'Roteiro pronto! Deseja continuar para gerar os roteiros dos episódios e os ativos de produção?' })
+    chatFlowMessages.value.push({ role: 'assistant', text: 'Roteiro pronto! Clique em "Continuar" para gerar os roteiros dos episódios e os ativos de produção.' })
     generatedScriptReady.value = true
-    chatFlowStep.value = CHAT_FLOW_STEPS.ASK_CONTINUE
+    setChatFlowStep(CHAT_FLOW_STEPS.ASK_CONTINUE)
     await persistAgentState('summary_ready')
   } catch (error) {
     chatFlowMessages.value.push({ role: 'assistant', text: 'Erro ao gerar episódios. Tente novamente.' })
-    chatFlowStep.value = CHAT_FLOW_STEPS.ASK_EPISODES
+    setChatFlowStep(CHAT_FLOW_STEPS.ASK_EPISODES)
   } finally {
     chatLoading.value = false
     scrollChatLogs()
@@ -12789,6 +12814,11 @@ onBeforeUnmount(() => {
   align-items: stretch;
 }
 
+.next-step-selector {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
 .episode-selector-body {
   min-width: 0;
   display: flex;
@@ -12814,6 +12844,35 @@ onBeforeUnmount(() => {
   text-transform: uppercase;
 }
 
+.episode-selector .episode-selector-top,
+.next-step-selector .episode-selector-top {
+  align-items: center;
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.next-step-selector .episode-selector-top {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.next-step-selector .episode-selector-chips {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.next-step-question {
+  min-width: min(100%, 320px);
+  max-width: 100%;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+}
+
 .episode-selector-chips {
   display: flex;
   gap: 6px;
@@ -12832,8 +12891,9 @@ onBeforeUnmount(() => {
 .episode-chip {
   height: 30px;
   min-width: 30px;
+  width: auto;
   padding: 0 12px;
-  border-radius: 8px;
+  border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.04);
   color: rgba(255, 255, 255, 0.7);
@@ -12863,6 +12923,25 @@ onBeforeUnmount(() => {
 .episode-chip.is-manual {
   min-width: 62px;
   padding: 0 14px;
+}
+
+.next-step-chip {
+  min-width: 92px;
+  width: auto;
+  padding: 0 16px;
+}
+
+.agent-status-chat .episode-selector-chips .episode-chip {
+  min-width: 30px;
+  width: auto;
+}
+
+.agent-status-chat .episode-selector-chips .episode-chip.is-manual {
+  min-width: 70px;
+}
+
+.agent-status-chat .episode-selector-chips .next-step-chip {
+  min-width: 92px;
 }
 
 .episode-selector-manual {

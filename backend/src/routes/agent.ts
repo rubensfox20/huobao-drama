@@ -14,6 +14,7 @@ import {
   fallbackExtractAndSaveMetadata,
   fallbackGenerateAndSaveStoryboards,
   fallbackRewriteAndSaveScript,
+  isImageInputError,
   normalizeToolName,
   normalizeToolResult,
 } from '../services/agent-route-support.js'
@@ -207,6 +208,12 @@ app.post('/:type/chat', async (c) => {
   } catch (err: any) {
     const elapsed = ((performance.now() - startTime) / 1000).toFixed(1)
     const message = extractAgentErrorMessage(err)
+
+    if (isImageInputError(err)) {
+      logTaskProgress('Agent', 'image-input-error', { agentType, message })
+      failWorkflowJob(Number(workflowJob?.id), message, { metadata: { agentType } })
+      return badRequest(c, message)
+    }
 
     if (agentType === 'extractor') {
       try {

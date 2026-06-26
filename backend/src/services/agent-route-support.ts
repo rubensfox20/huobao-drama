@@ -8,6 +8,20 @@ import { now } from '../utils/response.js'
 
 export { fallbackAssignVoices, fallbackExtractAndSaveMetadata }
 
+const IMAGE_INPUT_ERROR_PATTERNS = [
+  /does not support image/i,
+  /image.*not supported/i,
+  /cannot read.*\.png/i,
+  /image input.*not support/i,
+  /this model.*does not support.*image/i,
+]
+
+export function isImageInputError(err: any) {
+  const message = String(err?.message || '').toLowerCase()
+  const responseBody = String(err?.responseBody || '').toLowerCase()
+  return IMAGE_INPUT_ERROR_PATTERNS.some(p => p.test(message) || p.test(responseBody))
+}
+
 export function extractAgentErrorMessage(err: any) {
   const responseBody = String(err?.responseBody || '')
   if (responseBody) {
@@ -21,7 +35,11 @@ export function extractAgentErrorMessage(err: any) {
     } catch {}
   }
 
-  return err?.message || 'Agent execution failed'
+  const raw = err?.message || 'Agent execution failed'
+  if (isImageInputError(err)) {
+    return 'O modelo de IA configurado não aceita imagens. O assistente usa apenas texto. Para usar este recurso, troque para um modelo com suporte a visão (ex: gpt-4o, claude-3.5-sonnet).'
+  }
+  return raw
 }
 
 export function extractJsonObject(content: string) {

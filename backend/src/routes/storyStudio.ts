@@ -1,4 +1,5 @@
 ﻿import { Hono } from 'hono'
+import { isImageInputError } from '../services/agent-route-support.js'
 import { generateTextCompletion } from '../services/text-provider.js'
 import { badRequest, success } from '../utils/response.js'
 import { idParamSchema, parseJsonBody, parseParams, z } from '../utils/validation.js'
@@ -615,7 +616,11 @@ app.post('/cinema-chat', async (c) => {
     })
     assistantMessage = generated.text
   } catch (error) {
-    aiWarning = error instanceof Error ? error.message : 'AI chat unavailable; local response was used.'
+    const rawMessage = error instanceof Error ? error.message : 'AI chat unavailable; local response was used.'
+    if (isImageInputError(error)) {
+      assistantMessage = 'O modelo de IA configurado não aceita imagens. O chat usa apenas texto, sem suporte a anexos ou upload de imagens. Se quiser usar imagens, troque para um modelo com suporte a visão (ex: gpt-4o, claude-3.5-sonnet).'
+    }
+    aiWarning = rawMessage
   }
 
   const needsApproval = /(refaça|refaca|regener|sobrescrev|substitu|delete|apague|remova|organize a temporada|criar temporada|gerar roteiro|montar storyboard)/i.test(input.message)
